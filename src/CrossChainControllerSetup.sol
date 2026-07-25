@@ -9,6 +9,7 @@ import { ProxyLib } from "@aragon/osx-commons-contracts/src/utils/deployment/Pro
 import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 
 import { CrossChainController } from "./CrossChainController.sol";
+import { Executor } from "./Executor.sol";
 import { Permissions } from "./lib/Permissions.sol";
 
 /// @title CrossChainControllerSetup
@@ -22,8 +23,9 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
     ///         build, so there is no update path INTO it.
     uint16 internal constant THIS_BUILD = 1;
 
-    /// @notice Deploys the implementation the proxies point at.
-    constructor() PluginUpgradeableSetup(address(new CrossChainController())) { }
+    /// @notice Sets the implementation the proxies point at.
+    /// @param _implementation An existing `CrossChainController` implementation
+    constructor(address _implementation) PluginUpgradeableSetup(_implementation) { }
 
     /// @inheritdoc IPluginSetup
     function prepareInstallation(address _dao, bytes calldata _data)
@@ -33,12 +35,23 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
     {
         (address executor, bool frozenUpgrade, address guardian) = decodeInstallationParameters(_data);
 
+        // No executor requested: deploy a dedicated, owner-gated one.
+        // ownership is handed to the crosschain controller plugin.
+        bool deployedExecutor = executor == address(0);
+        if (deployedExecutor) executor = address(new Executor());
+
         plugin = IMPLEMENTATION.deployUUPSProxy(
             abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), executor, frozenUpgrade))
         );
 
+        // Only the plugin may execute inbound payloads on this executor.
+        if (deployedExecutor) Executor(executor).transferOwnership(plugin);
+
         preparedSetupData.permissions =
             _getPermissions(_dao, plugin, guardian, executor == _dao, PermissionLib.Operation.Grant);
+
+        preparedSetupData.helpers = new address[](1);
+        preparedSetupData.helpers[0] = executor;
     }
 
     /// @inheritdoc IPluginSetup

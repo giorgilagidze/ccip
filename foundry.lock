@@ -14,6 +14,12 @@
       "rev": "f8c0efe8685660dac07e08f4558f1b578ae991aa"
     }
   },
+  "lib/ens-contracts": {
+    "tag": {
+      "name": "v1.7.0",
+      "rev": "9b034936a42f462fc04bc0a929a419ede5e18d59"
+    }
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.16.2",
