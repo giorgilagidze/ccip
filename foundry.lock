@@ -1,0 +1,41 @@
+{
+  "lib/chainlink-ccip": {
+    "rev": "e60b2d487488bd67c8fcf4a51d71ed2f1d936251"
+  },
+  "lib/chainlink-evm": {
+    "tag": {
+      "name": "v0.3.3",
+      "rev": "793106cd598da8b2762958880300787b0b361fa1"
+    }
+  },
+  "lib/chainlink-local": {
+    "tag": {
+      "name": "v0.2.9",
+      "rev": "f8c0efe8685660dac07e08f4558f1b578ae991aa"
+    }
+  },
+  "lib/forge-std": {
+    "tag": {
+      "name": "v1.16.2",
+      "rev": "bf647bd6046f2f7da30d0c2bf435e5c76a780c1b"
+    }
+  },
+  "lib/openzeppelin-contracts": {
+    "tag": {
+      "name": "v5.6.1",
+      "rev": "5fd1781b1454fd1ef8e722282f86f9293cacf256"
+    }
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "tag": {
+      "name": "v5.6.1",
+      "rev": "7bf4727aacdbfaa0f36cbd664654d0c9e1dc52bf"
+    }
+  },
+  "lib/osx": {
+    "tag": {
+      "name": "v1.4.6",
+      "rev": "a299b0b27b0d0a2edc22f408ac079c0dfbd10b36"
+    }
+  }
+}
