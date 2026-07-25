@@ -134,3 +134,10 @@ itself so it can read its own trusted-remote map.
 > The controller always calls `execute` with an `allowFailureMap` of `0`, so every action
 > in an inbound payload must succeed or the whole batch is captured as `Delivered` for
 > retry.
+
+### Deployment
+
+From the Aragon OSx point of view, `CrossChainController` is a **plugin** (see the [plugin docs](https://docs.aragon.org/osx-contracts/1.x/core/plugins/)). Every plugin installation goes through the singleton `PluginSetupProcessor`, which requires the plugin to have its own `PluginRepo` - the registry that holds all of its published versions. A DAO installs a specific version by pointing at that repo.
+
+A `PluginRepo` does not hold the plugin code itself. It holds a `PluginSetup` per version - here `CrossChainControllerSetup` - which acts as the plugin's installer: it deploys the plugin instance and declares the permissions the DAO must grant or revoke. Keeping the setup separate lets every version ship its own installation logic, which matters because these steps are rarely trivial.
+
