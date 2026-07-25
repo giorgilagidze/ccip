@@ -141,3 +141,11 @@ From the Aragon OSx point of view, `CrossChainController` is a **plugin** (see t
 
 A `PluginRepo` does not hold the plugin code itself. It holds a `PluginSetup` per version - here `CrossChainControllerSetup` - which acts as the plugin's installer: it deploys the plugin instance and declares the permissions the DAO must grant or revoke. Keeping the setup separate lets every version ship its own installation logic, which matters because these steps are rarely trivial.
 
+Steps to install: Let's assume L1 is mainnet and L2 is base.
+
+1. Install `CrossChainController` on L1. (CCC_L1)
+2. Install `CrossChainController` on L2. (CCC_L2)
+3. on L1, deploy `CCIPAdapter` and pass (CCC_L2).
+4. on L2, deploy `CCIPAdapter` and pass (CCC_L1)
+5. on L1, updateConfig on `CrossChainController` and pass `CCIPAdapter` address of L1.
+6. on L2, updateConfig on `CrossChainController` and pass `CCIPAdapter` address of L2.
