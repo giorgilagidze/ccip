@@ -34,4 +34,11 @@ library Permissions {
     /// @notice Permission to permanently freeze the controller's implementation,
     ///         making every future upgrade impossible. One-way and irreversible.
     bytes32 internal constant FREEZE_UPGRADE_PERMISSION_ID = keccak256("FREEZE_UPGRADE_PERMISSION");
+
+    /// @notice The DAO's own execute permission. Held BY the controller ON the
+    ///         DAO, so inbound messages can be executed when the DAO itself is
+    ///         the configured executor.
+    /// @dev Mirrors `DAO.EXECUTE_PERMISSION_ID`; redeclared here so the plugin
+    ///      setup does not have to import the full `DAO` contract.
+    bytes32 internal constant EXECUTE_PERMISSION_ID = keccak256("EXECUTE_PERMISSION");
 }
