@@ -8,6 +8,11 @@ interface ICrossChainControllerEvents {
     /// @notice Emitted when a config is configured or cleared.
     event ConfigUpdated(uint256 indexed chainId, address localAdapter, address remoteAdapter);
 
+    /// @notice Emitted when the executor is updated where message will be routed to.
+    /// @param oldExecutor The previous executor; zero on the initial set.
+    /// @param newExecutor The executor now in use.
+    event ExecutorUpdated(address indexed oldExecutor, address indexed newExecutor);
+
     /// @notice Emitted when a message was handed to the local adapter.
     event MessageForwarded(
         uint256 indexed destinationChainId,

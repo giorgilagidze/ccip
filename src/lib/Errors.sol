@@ -29,6 +29,9 @@ library Errors {
     ///         addresses.
     error ADAPTER_HAS_NO_CODE(address adapter);
 
+    /// @notice Thrown when the executor being set has no deployed code.
+    error EXECUTOR_HAS_NO_CODE(address executor);
+
     error ZERO_ADDRESS();
 
     // ---------------------------------------------------------------------

@@ -6,23 +6,19 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
 
-import { IBaseAdapter } from "./adapters/IBaseAdapter.sol";
-import { ICrossChainController } from "./ICrossChainController.sol";
 import { DaoAuthorizable } from "@aragon/osx-commons-contracts/src/permission/auth/DaoAuthorizable.sol";
 import { Action, IExecutor } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 
 import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
+
+import { IBaseAdapter } from "./adapters/IBaseAdapter.sol";
+import { ICrossChainController } from "./ICrossChainController.sol";
 import { Errors } from "./lib/Errors.sol";
 
 import { TransactionLib, Transaction, TransactionState } from "./lib/Transaction.sol";
 
 /// @title CrossChainController
-/// @notice The entry point for sending a message cross chain.
-/// @dev Maps each standard chain id to the bridge adapter used to reach that
-///      chain; the adapter, not this contract, translates the standard chain id
-///      into the bridge's native one. Adapters are `delegatecall`ed, so the
-///      bridge sees this controller (not the adapter) as the message sender on
-///      the receiver side, and the send-side fee is paid by this controller.
+/// @notice The entry point for sending and receiving a message cross chain.
 /// @custom:security-contact sirt@aragon.org
 contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausable {
     using SafeERC20 for IERC20;
@@ -47,10 +43,12 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     /// @notice Permission to move pre-funded fee assets out of this contract.
     bytes32 public constant SWEEP_PERMISSION_ID = keccak256("SWEEP_PERMISSION");
 
-    /// @notice Permission to pause and unpause the message paths (forward /
-    ///         receive / retry / cancel). Intended for a bridge-independent L2
-    ///         guardian that can freeze inbound execution during an incident.
+    /// @notice Permission to pause and unpause the message paths
+    ///         (forward / receive / retry / cancel).
     bytes32 public constant PAUSE_PERMISSION_ID = keccak256("PAUSE_PERMISSION");
+
+    /// @notice Permission to repoint this controller at a different executor.
+    bytes32 public constant UPDATE_EXECUTOR_PERMISSION_ID = keccak256("UPDATE_EXECUTOR_PERMISSION");
 
     // every message originator sends we put into an transaction and attach a nonce. It increments by one
     uint256 internal _currentTxNonce;
@@ -60,6 +58,9 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
 
     /// @notice standard chain id -> lane configuration.
     mapping(uint256 => ChainConfig) public chainToAdapter;
+
+    /// @notice The executor that inbound payloads are executed on.
+    address public executor;
 
     /// @notice Restricts a function to local adapters registered via `updateConfig`.
     // forge-lint: disable-next-line(unwrapped-modifier-logic)
@@ -71,7 +72,12 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
         _;
     }
 
-    constructor(address _dao) DaoAuthorizable(IDAO(_dao)) { }
+    /// @param _dao The DAO acting as this contract's permission manager.
+    /// @param _executor The executor inbound payloads are executed on. Pass the
+    ///        DAO itself to keep execution on the DAO.
+    constructor(address _dao, address _executor) DaoAuthorizable(IDAO(_dao)) {
+        _setExecutor(_executor);
+    }
 
     /// @notice Accepts native pre-funding used to pay bridge fees.
     receive() external payable { }
@@ -114,6 +120,13 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
 
             emit ConfigUpdated(chainId, newConfig.localAdapter, newConfig.remoteAdapter);
         }
+    }
+
+    /// @notice Repoints this controller at a different executor.
+    /// @dev The message is routed to this executor address for execution.
+    /// @param _executor The new executor address.
+    function updateExecutor(address _executor) public virtual auth(UPDATE_EXECUTOR_PERMISSION_ID) {
+        _setExecutor(_executor);
     }
 
     /// @notice Whether an address is currently registered as a local adapter.
@@ -249,7 +262,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
 
         Action[] memory actions = abi.decode(_payload, (Action[]));
 
-        IExecutor(address(dao())).execute(_txId, actions, 0);
+        IExecutor(executor).execute(_txId, actions, 0);
     }
 
     /// @inheritdoc ICrossChainController
@@ -378,6 +391,16 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
         if (returndata.length < 64) revert Errors.MESSAGE_SEND_FAILED();
 
         (messageId, fee) = abi.decode(returndata, (bytes32, uint256));
+    }
+
+    /// @notice Helper function used by `updateExecutor`.
+    function _setExecutor(address _executor) internal {
+        if (_executor == address(0)) revert Errors.ZERO_ADDRESS();
+        if (_executor.code.length == 0) revert Errors.EXECUTOR_HAS_NO_CODE(_executor);
+
+        emit ExecutorUpdated(executor, _executor);
+
+        executor = _executor;
     }
 
     /// @notice Loads and validates the lane configuration for a destination.

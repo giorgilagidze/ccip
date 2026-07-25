@@ -61,10 +61,11 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
     bytes32 internal cancelMessagePermissionId;
     bytes32 internal sweepPermissionId;
     bytes32 internal pausePermissionId;
+    bytes32 internal updateExecutorPermissionId;
 
     function setUp() public virtual {
         daoMock = new CrossChainControllerDAOMock();
-        controller = new CrossChainController(address(daoMock));
+        controller = new CrossChainController(address(daoMock), address(daoMock));
 
         feeToken = new ERC20Mock("Fee", "FEE");
         actionTarget = new ActionExecute();
@@ -90,6 +91,7 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         cancelMessagePermissionId = controller.CANCEL_MESSAGE_PERMISSION_ID();
         sweepPermissionId = controller.SWEEP_PERMISSION_ID();
         pausePermissionId = controller.PAUSE_PERMISSION_ID();
+        updateExecutorPermissionId = controller.UPDATE_EXECUTOR_PERMISSION_ID();
 
         daoMock.setHasPermission(address(controller), alice, forwardMessagePermissionId, true);
         daoMock.setHasPermission(address(controller), alice, updateConfigPermissionId, true);
@@ -97,6 +99,7 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         daoMock.setHasPermission(address(controller), alice, cancelMessagePermissionId, true);
         daoMock.setHasPermission(address(controller), alice, sweepPermissionId, true);
         daoMock.setHasPermission(address(controller), alice, pausePermissionId, true);
+        daoMock.setHasPermission(address(controller), alice, updateExecutorPermissionId, true);
     }
 
     // -------------------------------------------------------------------------

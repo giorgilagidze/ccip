@@ -77,7 +77,7 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
         remoteAdapter = makeAddr("remoteAdapter");
 
         daoMock = new DAOMock();
-        controller = new CrossChainController(address(daoMock));
+        controller = new CrossChainController(address(daoMock), address(daoMock));
         router = new CCIPRouterMock();
         feeTokenErc20 = new ERC20Mock("Fee Token", "FEE");
 
