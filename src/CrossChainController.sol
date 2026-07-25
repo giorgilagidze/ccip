@@ -14,6 +14,7 @@ import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 import { IBaseAdapter } from "./adapters/IBaseAdapter.sol";
 import { ICrossChainController } from "./ICrossChainController.sol";
 import { Errors } from "./lib/Errors.sol";
+import { Permissions } from "./lib/Permissions.sol";
 
 import { TransactionLib, Transaction, TransactionState } from "./lib/Transaction.sol";
 
@@ -24,31 +25,6 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     using SafeERC20 for IERC20;
     using TransactionLib for Transaction;
     using TransactionLib for bytes;
-
-    /// @notice Permission to forward a message to a remote chain.
-    bytes32 public constant FORWARD_MESSAGE_PERMISSION_ID = keccak256("FORWARD_MESSAGE_PERMISSION");
-
-    /// @notice Permission to (re)configure the config.
-    bytes32 public constant UPDATE_CONFIG_PERMISSION_ID = keccak256("UPDATE_CONFIG_PERMISSION");
-
-    /// @notice Permission to retry a message whose execution reverted on
-    ///         arrival. Intended for the DAO and/or an ops multisig, since the
-    ///         payload itself was already authenticated by the bridge.
-    bytes32 public constant RETRY_MESSAGE_PERMISSION_ID = keccak256("RETRY_MESSAGE_PERMISSION");
-
-    /// @notice Permission to cancel a delivered-but-failed message so it can
-    ///         never be retried. Intended for the DAO and/or an ops multisig.
-    bytes32 public constant CANCEL_MESSAGE_PERMISSION_ID = keccak256("CANCEL_MESSAGE_PERMISSION");
-
-    /// @notice Permission to move pre-funded fee assets out of this contract.
-    bytes32 public constant SWEEP_PERMISSION_ID = keccak256("SWEEP_PERMISSION");
-
-    /// @notice Permission to pause and unpause the message paths
-    ///         (forward / receive / retry / cancel).
-    bytes32 public constant PAUSE_PERMISSION_ID = keccak256("PAUSE_PERMISSION");
-
-    /// @notice Permission to repoint this controller at a different executor.
-    bytes32 public constant UPDATE_EXECUTOR_PERMISSION_ID = keccak256("UPDATE_EXECUTOR_PERMISSION");
 
     // every message originator sends we put into an transaction and attach a nonce. It increments by one
     uint256 internal _currentTxNonce;
@@ -97,7 +73,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     function updateConfig(uint256[] memory _chainIds, ChainConfig[] memory _configs)
         public
         virtual
-        auth(UPDATE_CONFIG_PERMISSION_ID)
+        auth(Permissions.UPDATE_CONFIG_PERMISSION_ID)
     {
         if (_chainIds.length != _configs.length) {
             revert Errors.INVALID_LENGTH_MISMATCH();
@@ -125,7 +101,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     /// @notice Repoints this controller at a different executor.
     /// @dev The message is routed to this executor address for execution.
     /// @param _executor The new executor address.
-    function updateExecutor(address _executor) public virtual auth(UPDATE_EXECUTOR_PERMISSION_ID) {
+    function updateExecutor(address _executor) public virtual auth(Permissions.UPDATE_EXECUTOR_PERMISSION_ID) {
         _setExecutor(_executor);
     }
 
@@ -176,7 +152,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
         virtual
         override
         whenNotPaused
-        auth(FORWARD_MESSAGE_PERMISSION_ID)
+        auth(Permissions.FORWARD_MESSAGE_PERMISSION_ID)
         returns (bytes32)
     {
         ChainConfig memory config = _validatedConfig(_destinationChainId);
@@ -273,7 +249,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
         virtual
         override
         whenNotPaused
-        auth(RETRY_MESSAGE_PERMISSION_ID)
+        auth(Permissions.RETRY_MESSAGE_PERMISSION_ID)
     {
         bytes32 txId = _encodedTx.id();
 
@@ -293,7 +269,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     ///      The `txId` stays occupied (state becomes `Cancelled`, not `None`),
     ///      so the same message can never be re-delivered or retried afterwards.
     /// @param _encodedTx The encoded tx that must be cancelled.
-    function cancelMessage(bytes memory _encodedTx) public virtual whenNotPaused auth(CANCEL_MESSAGE_PERMISSION_ID) {
+    function cancelMessage(bytes memory _encodedTx) public virtual whenNotPaused auth(Permissions.CANCEL_MESSAGE_PERMISSION_ID) {
         bytes32 txId = _encodedTx.id();
 
         if (_transactionState[txId] != TransactionState.Delivered) {
@@ -327,7 +303,7 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     /// @param _token The asset to move; `address(0)` for native currency.
     /// @param _to The recipient (typically the DAO).
     /// @param _amount The amount to move.
-    function sweep(address _token, address _to, uint256 _amount) public virtual auth(SWEEP_PERMISSION_ID) {
+    function sweep(address _token, address _to, uint256 _amount) public virtual auth(Permissions.SWEEP_PERMISSION_ID) {
         if (_to == address(0)) revert Errors.ZERO_ADDRESS();
 
         if (_token == address(0)) {
@@ -346,12 +322,12 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     ///      during an incident (e.g. a compromised bridge). Admin paths such as
     ///      `updateConfig` and `sweep` remain callable so recovery is possible
     ///      while paused.
-    function pause() external virtual auth(PAUSE_PERMISSION_ID) {
+    function pause() external virtual auth(Permissions.PAUSE_PERMISSION_ID) {
         _pause();
     }
 
     /// @notice Resumes the message paths.
-    function unpause() external virtual auth(PAUSE_PERMISSION_ID) {
+    function unpause() external virtual auth(Permissions.PAUSE_PERMISSION_ID) {
         _unpause();
     }
 

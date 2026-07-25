@@ -7,6 +7,7 @@ import { Test } from "forge-std/Test.sol";
 import { CrossChainController } from "@src/CrossChainController.sol";
 import { ICrossChainControllerEvents, ICrossChainController } from "@src/ICrossChainController.sol";
 import { Transaction, TransactionLib } from "@src/lib/Transaction.sol";
+import { Permissions } from "@src/lib/Permissions.sol";
 import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 import { AdapterMock } from "@mocks/AdapterMock.sol";
 import { CrossChainControllerDAOMock } from "@mocks/CrossChainControllerDAOMock.sol";
@@ -85,13 +86,13 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         adapterA = new AdapterMock(address(controller), address(0), 0, bytes32(uint256(1)), feeSinkA, false, false);
         adapterB = new AdapterMock(address(controller), address(0), 0, bytes32(uint256(2)), feeSinkB, false, false);
 
-        forwardMessagePermissionId = controller.FORWARD_MESSAGE_PERMISSION_ID();
-        updateConfigPermissionId = controller.UPDATE_CONFIG_PERMISSION_ID();
-        retryMessagePermissionId = controller.RETRY_MESSAGE_PERMISSION_ID();
-        cancelMessagePermissionId = controller.CANCEL_MESSAGE_PERMISSION_ID();
-        sweepPermissionId = controller.SWEEP_PERMISSION_ID();
-        pausePermissionId = controller.PAUSE_PERMISSION_ID();
-        updateExecutorPermissionId = controller.UPDATE_EXECUTOR_PERMISSION_ID();
+        forwardMessagePermissionId = Permissions.FORWARD_MESSAGE_PERMISSION_ID;
+        updateConfigPermissionId = Permissions.UPDATE_CONFIG_PERMISSION_ID;
+        retryMessagePermissionId = Permissions.RETRY_MESSAGE_PERMISSION_ID;
+        cancelMessagePermissionId = Permissions.CANCEL_MESSAGE_PERMISSION_ID;
+        sweepPermissionId = Permissions.SWEEP_PERMISSION_ID;
+        pausePermissionId = Permissions.PAUSE_PERMISSION_ID;
+        updateExecutorPermissionId = Permissions.UPDATE_EXECUTOR_PERMISSION_ID;
 
         daoMock.setHasPermission(address(controller), alice, forwardMessagePermissionId, true);
         daoMock.setHasPermission(address(controller), alice, updateConfigPermissionId, true);
