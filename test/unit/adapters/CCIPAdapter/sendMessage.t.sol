@@ -230,15 +230,13 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
         router.setFee(feeAmount);
         vm.deal(address(controller), feeAmount);
 
-        bytes32 chainConfigSlotA = keccak256(
-            abi.encode(CHAIN_ETH_MAINNET, uint256(3)) // chainToAdapter at slot 3
-        );
+        bytes32 chainConfigSlotA = keccak256(abi.encode(CHAIN_ETH_MAINNET, CHAIN_TO_ADAPTER_SLOT));
         bytes32 chainConfigSlotB = bytes32(uint256(chainConfigSlotA) + 1);
 
-        bytes32 pausedBefore = vm.load(address(controller), bytes32(uint256(0)));
-        bytes32 nonceBefore = vm.load(address(controller), bytes32(uint256(1)));
-        bytes32 txStateBefore = vm.load(address(controller), bytes32(uint256(2)));
-        bytes32 chainToAdapterBefore = vm.load(address(controller), bytes32(uint256(3)));
+        bytes32 pausedBefore = vm.load(address(controller), bytes32(PAUSED_SLOT));
+        bytes32 nonceBefore = vm.load(address(controller), bytes32(NONCE_SLOT));
+        bytes32 txStateBefore = vm.load(address(controller), bytes32(TRANSACTION_STATE_SLOT));
+        bytes32 chainToAdapterBefore = vm.load(address(controller), bytes32(CHAIN_TO_ADAPTER_SLOT));
         bytes32 chainConfigABefore = vm.load(address(controller), chainConfigSlotA);
         bytes32 chainConfigBBefore = vm.load(address(controller), chainConfigSlotB);
 
@@ -247,21 +245,21 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
 
         controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "");
 
-        // `_currentTxNonce` (slot 1) is the one word a send legitimately
-        // mutates: it must have incremented by exactly one.
+        // `_currentTxNonce` is the one word a send legitimately mutates: it
+        // must have incremented by exactly one.
         assertEq(
-            vm.load(address(controller), bytes32(uint256(1))),
+            vm.load(address(controller), bytes32(NONCE_SLOT)),
             bytes32(uint256(nonceBefore) + 1),
             "nonce must increment by exactly one"
         );
-        assertEq(vm.load(address(controller), bytes32(uint256(0))), pausedBefore, "_paused slot mutated by send");
+        assertEq(vm.load(address(controller), bytes32(PAUSED_SLOT)), pausedBefore, "_paused slot mutated by send");
         assertEq(
-            vm.load(address(controller), bytes32(uint256(2))),
+            vm.load(address(controller), bytes32(TRANSACTION_STATE_SLOT)),
             txStateBefore,
             "_transactionState base slot mutated by send"
         );
         assertEq(
-            vm.load(address(controller), bytes32(uint256(3))),
+            vm.load(address(controller), bytes32(CHAIN_TO_ADAPTER_SLOT)),
             chainToAdapterBefore,
             "chainToAdapter base slot mutated by send"
         );

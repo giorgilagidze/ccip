@@ -82,7 +82,7 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
             payable(
                 ProxyLib.deployUUPSProxy(
                     address(new CrossChainController()),
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock)))
+                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock), false))
                 )
             )
         );
@@ -161,4 +161,19 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     function _emptyActionsPayload() internal pure returns (bytes memory) {
         return abi.encode(new Action[](0));
     }
+
+    // -------------------------------------------------------------------------
+    // Controller storage-slot helpers (verified via
+    // `forge inspect src/CrossChainController.sol:CrossChainController storage`).
+    //
+    // The controller's own variables start at slot 351 -- everything below
+    // belongs to the upgradeable inheritance chain. Re-run the command above
+    // after any change to the base contracts or declaration order; a stale
+    // value makes the collision test read an untouched word and pass vacuously.
+    // -------------------------------------------------------------------------
+
+    uint256 internal constant PAUSED_SLOT = 301;
+    uint256 internal constant NONCE_SLOT = 351;
+    uint256 internal constant TRANSACTION_STATE_SLOT = 352;
+    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 353;
 }

@@ -34,6 +34,15 @@ library Errors {
 
     error ZERO_ADDRESS();
 
+    /// @notice Thrown when an upgrade is attempted after `freezeUpgrade` has
+    ///         been called. The freeze is permanent: no permission, not even the
+    ///         DAO's, can lift it.
+    error UPGRADE_FROZEN();
+
+    /// @notice Thrown when `freezeUpgrade` is called on an already-frozen
+    ///         controller.
+    error UPGRADE_ALREADY_FROZEN();
+
     // ---------------------------------------------------------------------
     // Authorization
     // ---------------------------------------------------------------------

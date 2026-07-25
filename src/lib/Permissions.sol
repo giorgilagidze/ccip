@@ -30,4 +30,8 @@ library Permissions {
 
     /// @notice Permission to repoint this controller at a different executor.
     bytes32 internal constant UPDATE_EXECUTOR_PERMISSION_ID = keccak256("UPDATE_EXECUTOR_PERMISSION");
+
+    /// @notice Permission to permanently freeze the controller's implementation,
+    ///         making every future upgrade impossible. One-way and irreversible.
+    bytes32 internal constant FREEZE_UPGRADE_PERMISSION_ID = keccak256("FREEZE_UPGRADE_PERMISSION");
 }

@@ -110,11 +110,19 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
     /// @notice Deploys a UUPS proxy over `controllerImplementation` and
     ///         initializes it. Mirrors how the plugin setup installs the plugin.
     function deployController(address _dao, address _executor) internal returns (CrossChainController) {
+        return deployController(_dao, _executor, false);
+    }
+
+    /// @notice Deploys a controller proxy, optionally already frozen.
+    function deployController(address _dao, address _executor, bool _frozenUpgrade)
+        internal
+        returns (CrossChainController)
+    {
         return CrossChainController(
             payable(
                 ProxyLib.deployUUPSProxy(
                     address(controllerImplementation),
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), _executor))
+                    abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), _executor, _frozenUpgrade))
                 )
             )
         );
@@ -188,19 +196,73 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
 
     // -------------------------------------------------------------------------
     // Storage-slot helpers (verified via
-    // `forge inspect .../CrossChainController.sol:CrossChainController storageLayout`):
-    // slot 0 = `Pausable._paused`, slot 1 = `_currentTxNonce`,
-    // slot 2 = `_transactionState`, slot 3 = `chainToAdapter`.
+    // `forge inspect src/CrossChainController.sol:CrossChainController storage`).
+    //
+    // The controller's own variables start at slot 351: everything below that
+    // belongs to the upgradeable inheritance chain (`Initializable`,
+    // `DaoAuthorizableUpgradeable`, `PluginUUPSUpgradeable`,
+    // `PausableUpgradeable` and their `__gap`s). Re-run the command above after
+    // ANY change to the base contracts or to the declaration order -- these
+    // constants are a hardcoded mirror of the real layout, and a silently stale
+    // value makes the collision tests read an untouched gap word and pass
+    // vacuously.
+    //
+    // slot 351 = `_currentTxNonce`, 352 = `_transactionState`,
+    // 353 = `chainToAdapter`, 354 = `executor` + `frozenUpgrade` (packed).
     // -------------------------------------------------------------------------
 
-    uint256 internal constant NONCE_SLOT = 1;
-    uint256 internal constant TRANSACTION_STATE_SLOT = 2;
-    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 3;
+    uint256 internal constant NONCE_SLOT = 351;
+    uint256 internal constant TRANSACTION_STATE_SLOT = 352;
+    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 353;
+    uint256 internal constant EXECUTOR_SLOT = 354;
 
     /// @dev `chainToAdapter[_chainId]` occupies TWO words: word 0 holds
     ///      `localAdapter`; word 1 holds `remoteAdapter`. This returns word 0's
     ///      slot; word 1 is `+ 1`.
     function _chainConfigSlot(uint256 _chainId) internal pure returns (bytes32) {
         return keccak256(abi.encode(_chainId, CHAIN_TO_ADAPTER_SLOT));
+    }
+
+    /// @notice Pins the slot constants above to the real layout.
+    /// @dev The storage-collision tests read these slots directly. If the
+    ///      inheritance chain shifts them and the constants are not updated,
+    ///      those tests would read an untouched word and pass without proving
+    ///      anything -- so assert the mapping here, where the failure is
+    ///      unambiguous. Each slot is verified by writing through a public
+    ///      entry point and observing the word actually move.
+    function test_storageSlotConstantsMatchLayout() public {
+        // `executor` is set by `initialize`; low 20 bytes of its slot.
+        assertEq(
+            address(uint160(uint256(vm.load(address(controller), bytes32(EXECUTOR_SLOT))))),
+            controller.executor(),
+            "EXECUTOR_SLOT stale"
+        );
+
+        // `chainToAdapter[CHAIN_ID]` -- word 0 is `localAdapter`.
+        _configureLane(CHAIN_ID, address(adapterA), remoteAdapterA);
+        assertEq(
+            address(uint160(uint256(vm.load(address(controller), _chainConfigSlot(CHAIN_ID))))),
+            address(adapterA),
+            "CHAIN_TO_ADAPTER_SLOT stale"
+        );
+
+        // `_currentTxNonce` -- moves by exactly one per forward.
+        uint256 nonceBefore = uint256(vm.load(address(controller), bytes32(NONCE_SLOT)));
+        vm.prank(alice);
+        controller.forwardMessage(CHAIN_ID, GAS_LIMIT, _emptyActionsPayload());
+        assertEq(
+            uint256(vm.load(address(controller), bytes32(NONCE_SLOT))), nonceBefore + 1, "NONCE_SLOT stale"
+        );
+
+        // `_transactionState[txId]` -- set to `Executed` by the delivery above.
+        bytes memory encodedTx = _encodedEmptyTx(1, CHAIN_ID);
+        vm.prank(address(adapterA));
+        controller.receiveMessage(bytes32(uint256(1)), encodedTx, CHAIN_ID);
+        bytes32 txId = TransactionLib.id(encodedTx);
+        assertEq(
+            uint256(vm.load(address(controller), keccak256(abi.encode(txId, TRANSACTION_STATE_SLOT)))),
+            uint256(controller.getTransactionState(txId)),
+            "TRANSACTION_STATE_SLOT stale"
+        );
     }
 }

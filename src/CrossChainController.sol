@@ -38,6 +38,11 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     /// @notice The executor that inbound payloads are executed on.
     address public executor;
 
+    /// @notice Whether the implementation is permanently frozen.
+    /// @dev One-way: once `true` it can never be set back to `false`, so the
+    ///      controller is pinned to its current implementation forever.
+    bool public frozenUpgrade;
+
     /// @notice Restricts a function to local adapters registered via `updateConfig`.
     // forge-lint: disable-next-line(unwrapped-modifier-logic)
     modifier onlyLocalAdapter(uint256 _srcChainId) {
@@ -53,11 +58,16 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     /// @param _dao The DAO acting as this contract's permission manager.
     /// @param _executor The executor inbound payloads are executed on. Pass the
     ///        DAO itself to keep execution on the DAO.
-    function initialize(IDAO _dao, address _executor) external initializer {
+    /// @param _frozenUpgrade Whether to install the controller already frozen.
+    ///        IRREVERSIBLE -- pass `true` only for an installation that is
+    ///        intended to be pinned to this implementation forever.
+    function initialize(IDAO _dao, address _executor, bool _frozenUpgrade) external initializer {
         __PluginUUPSUpgradeable_init(_dao);
         __Pausable_init();
 
         _setExecutor(_executor);
+
+        if (_frozenUpgrade) _freezeUpgrade();
     }
 
     /// @notice Accepts native pre-funding used to pay bridge fees.
@@ -115,6 +125,12 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     /// @param _executor The new executor address.
     function updateExecutor(address _executor) public virtual auth(Permissions.UPDATE_EXECUTOR_PERMISSION_ID) {
         _setExecutor(_executor);
+    }
+
+    /// @notice Permanently freezes the implementation this controller runs.
+    /// @dev IRREVERSIBLE. After this call no upgrade can ever be applied again.
+    function freezeUpgrade() external virtual auth(Permissions.FREEZE_UPGRADE_PERMISSION_ID) {
+        _freezeUpgrade();
     }
 
     /// @notice Whether an address is currently registered as a local adapter.
@@ -396,6 +412,15 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
         executor = _executor;
     }
 
+    /// @notice Helper function used by `freezeUpgrade` and `initialize`.
+    function _freezeUpgrade() internal {
+        if (frozenUpgrade) revert Errors.UPGRADE_ALREADY_FROZEN();
+
+        frozenUpgrade = true;
+
+        emit UpgradeFrozen(implementation());
+    }
+
     /// @notice Loads and validates the lane configuration for a destination.
     /// @dev Reverts instead of silently no-op'ing: a `delegatecall` to a
     ///      codeless address reports success, which would let a proposal
@@ -406,6 +431,17 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
         if (config.localAdapter == address(0) || config.remoteAdapter == address(0)) {
             revert Errors.ADAPTER_NOT_CONFIGURED(_destinationChainId);
         }
+    }
+
+    /// @notice Gates every upgrade path on the freeze flag.
+    /// @dev This is the single chokepoint: the `PluginSetupProcessor` reaches
+    ///      the proxy through `upgradeTo`/`upgradeToAndCall`, and both route
+    ///      here, so the freeze holds against the framework and direct calls
+    ///      alike. The permission check still runs via `super`.
+    function _authorizeUpgrade(address _newImplementation) internal virtual override {
+        if (frozenUpgrade) revert Errors.UPGRADE_FROZEN();
+
+        super._authorizeUpgrade(_newImplementation);
     }
 
     /// @notice This empty reserved space is put in place to allow future versions to add
