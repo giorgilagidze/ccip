@@ -13,6 +13,7 @@ import { ICrossChainControllerEvents, ICrossChainController } from "@src/ICrossC
 import { ChainIds } from "@src/lib/ChainIds.sol";
 import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
+import { ProxyLib } from "@aragon/osx-commons-contracts/src/utils/deployment/ProxyLib.sol";
 import { DAOMock } from "@osx-test/mocks/commons/dao/DAOMock.sol";
 import { ERC20Mock } from "@mocks/ERC20Mock.sol";
 import { CCIPRouterMock } from "@mocks/CCIPRouterMock.sol";
@@ -77,7 +78,14 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
         remoteAdapter = makeAddr("remoteAdapter");
 
         daoMock = new DAOMock();
-        controller = new CrossChainController(address(daoMock), address(daoMock));
+        controller = CrossChainController(
+            payable(
+                ProxyLib.deployUUPSProxy(
+                    address(new CrossChainController()),
+                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock)))
+                )
+            )
+        );
         router = new CCIPRouterMock();
         feeTokenErc20 = new ERC20Mock("Fee Token", "FEE");
 

@@ -4,9 +4,9 @@ pragma solidity ^0.8.8;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
+import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
-import { DaoAuthorizable } from "@aragon/osx-commons-contracts/src/permission/auth/DaoAuthorizable.sol";
+import { PluginUUPSUpgradeable } from "@aragon/osx-commons-contracts/src/plugin/PluginUUPSUpgradeable.sol";
 import { Action, IExecutor } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 
 import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
@@ -21,7 +21,7 @@ import { TransactionLib, Transaction, TransactionState } from "./lib/Transaction
 /// @title CrossChainController
 /// @notice The entry point for sending and receiving a message cross chain.
 /// @custom:security-contact sirt@aragon.org
-contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausable {
+contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, PausableUpgradeable {
     using SafeERC20 for IERC20;
     using TransactionLib for Transaction;
     using TransactionLib for bytes;
@@ -48,15 +48,27 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
         _;
     }
 
+    /// @notice Initializes the plugin behind a UUPS proxy.
+    /// @dev Called once by the plugin setup right after the proxy is deployed.
     /// @param _dao The DAO acting as this contract's permission manager.
     /// @param _executor The executor inbound payloads are executed on. Pass the
     ///        DAO itself to keep execution on the DAO.
-    constructor(address _dao, address _executor) DaoAuthorizable(IDAO(_dao)) {
+    function initialize(IDAO _dao, address _executor) external initializer {
+        __PluginUUPSUpgradeable_init(_dao);
+        __Pausable_init();
+
         _setExecutor(_executor);
     }
 
     /// @notice Accepts native pre-funding used to pay bridge fees.
     receive() external payable { }
+
+    /// @notice Checks if an interface is supported by this or its parent contract.
+    /// @param _interfaceId The ID of the interface.
+    /// @return Returns `true` if the interface is supported.
+    function supportsInterface(bytes4 _interfaceId) public view virtual override returns (bool) {
+        return _interfaceId == type(ICrossChainController).interfaceId || super.supportsInterface(_interfaceId);
+    }
 
     // -------------------------------------------------------------------------
     // Configuration
@@ -269,7 +281,12 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
     ///      The `txId` stays occupied (state becomes `Cancelled`, not `None`),
     ///      so the same message can never be re-delivered or retried afterwards.
     /// @param _encodedTx The encoded tx that must be cancelled.
-    function cancelMessage(bytes memory _encodedTx) public virtual whenNotPaused auth(Permissions.CANCEL_MESSAGE_PERMISSION_ID) {
+    function cancelMessage(bytes memory _encodedTx)
+        public
+        virtual
+        whenNotPaused
+        auth(Permissions.CANCEL_MESSAGE_PERMISSION_ID)
+    {
         bytes32 txId = _encodedTx.id();
 
         if (_transactionState[txId] != TransactionState.Delivered) {
@@ -390,4 +407,8 @@ contract CrossChainController is ICrossChainController, DaoAuthorizable, Pausabl
             revert Errors.ADAPTER_NOT_CONFIGURED(_destinationChainId);
         }
     }
+
+    /// @notice This empty reserved space is put in place to allow future versions to add
+    ///         new variables without shifting down storage in the inheritance chain.
+    uint256[46] private __gap;
 }

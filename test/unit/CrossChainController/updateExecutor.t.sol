@@ -3,31 +3,37 @@
 pragma solidity ^0.8.17;
 
 import { CrossChainControllerBase } from "./Base.t.sol";
-import { CrossChainController } from "@src/CrossChainController.sol";
 import { Errors } from "@src/lib/Errors.sol";
 import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 import { DaoUnauthorized } from "@aragon/osx-commons-contracts/src/permission/auth/auth.sol";
 import { CrossChainControllerDAOMock } from "@mocks/CrossChainControllerDAOMock.sol";
+import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 
 contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
     // -------------------------------------------------------------------------
     // Initial state.
     // -------------------------------------------------------------------------
 
-    /// @dev The fixture constructs the controller with the DAO as executor.
-    function test_constructorSetsExecutor() public view {
+    /// @dev The fixture initializes the controller with the DAO as executor.
+    function test_initializeSetsExecutor() public view {
         assertEq(controller.executor(), address(daoMock));
     }
 
-    function test_constructorRevertsOnZeroExecutor() public {
+    function test_initializeRevertsOnZeroExecutor() public {
         vm.expectRevert(Errors.ZERO_ADDRESS.selector);
-        new CrossChainController(address(daoMock), address(0));
+        deployController(address(daoMock), address(0));
     }
 
-    function test_constructorRevertsOnCodelessExecutor() public {
+    function test_initializeRevertsOnCodelessExecutor() public {
         address eoa = makeAddr("eoaExecutor");
         vm.expectRevert(abi.encodeWithSelector(Errors.EXECUTOR_HAS_NO_CODE.selector, eoa));
-        new CrossChainController(address(daoMock), eoa);
+        deployController(address(daoMock), eoa);
+    }
+
+    /// @dev The proxy is initialized by the fixture; a second call must revert.
+    function test_initializeRevertsOnSecondCall() public {
+        vm.expectRevert("Initializable: contract is already initialized");
+        controller.initialize(IDAO(address(daoMock)), address(daoMock));
     }
 
     // -------------------------------------------------------------------------

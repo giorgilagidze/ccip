@@ -8,6 +8,8 @@ import { CrossChainController } from "@src/CrossChainController.sol";
 import { ICrossChainControllerEvents, ICrossChainController } from "@src/ICrossChainController.sol";
 import { Transaction, TransactionLib } from "@src/lib/Transaction.sol";
 import { Permissions } from "@src/lib/Permissions.sol";
+import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
+import { ProxyLib } from "@aragon/osx-commons-contracts/src/utils/deployment/ProxyLib.sol";
 import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 import { AdapterMock } from "@mocks/AdapterMock.sol";
 import { CrossChainControllerDAOMock } from "@mocks/CrossChainControllerDAOMock.sol";
@@ -43,6 +45,7 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
     // -------------------------------------------------------------------------
 
     CrossChainControllerDAOMock internal daoMock;
+    CrossChainController internal controllerImplementation;
     CrossChainController internal controller;
     AdapterMock internal adapterA;
     AdapterMock internal adapterB;
@@ -66,7 +69,8 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
 
     function setUp() public virtual {
         daoMock = new CrossChainControllerDAOMock();
-        controller = new CrossChainController(address(daoMock), address(daoMock));
+        controllerImplementation = new CrossChainController();
+        controller = deployController(address(daoMock), address(daoMock));
 
         feeToken = new ERC20Mock("Fee", "FEE");
         actionTarget = new ActionExecute();
@@ -101,6 +105,19 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         daoMock.setHasPermission(address(controller), alice, sweepPermissionId, true);
         daoMock.setHasPermission(address(controller), alice, pausePermissionId, true);
         daoMock.setHasPermission(address(controller), alice, updateExecutorPermissionId, true);
+    }
+
+    /// @notice Deploys a UUPS proxy over `controllerImplementation` and
+    ///         initializes it. Mirrors how the plugin setup installs the plugin.
+    function deployController(address _dao, address _executor) internal returns (CrossChainController) {
+        return CrossChainController(
+            payable(
+                ProxyLib.deployUUPSProxy(
+                    address(controllerImplementation),
+                    abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), _executor))
+                )
+            )
+        );
     }
 
     // -------------------------------------------------------------------------
