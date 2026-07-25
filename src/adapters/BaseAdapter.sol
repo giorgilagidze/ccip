@@ -11,11 +11,6 @@ import { IBaseAdapter } from "./IBaseAdapter.sol";
 /// @notice Shared logic for bridge adapters owned by a `CrossChainController`.
 /// @custom:security-contact sirt@aragon.org
 abstract contract BaseAdapter is IBaseAdapter {
-    /// @notice Permission to change adapter configuration (trusted remotes,
-    ///         chain-id mappings). Receive-path configuration only; the send
-    ///         path is configured on the controller.
-    bytes32 public constant UPDATE_ADAPTER_CONFIG_PERMISSION_ID = keccak256("UPDATE_ADAPTER_CONFIG_PERMISSION");
-
     /// @notice The address of crosschain controller.
     address public immutable override CROSS_CHAIN_CONTROLLER;
 

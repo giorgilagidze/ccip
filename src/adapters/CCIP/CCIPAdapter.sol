@@ -144,7 +144,8 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
 
     /// @inheritdoc IERC165
     function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
-        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IBaseAdapter).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 
     // -------------------------------------------------------------------------

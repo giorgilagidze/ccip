@@ -63,10 +63,10 @@ interface ICrossChainController is ICrossChainControllerEvents {
     /// @param _destinationChainId The standard chain id of remote chain.
     /// @param _gasLimit The gas limit that will be used for crosschain message execution.
     /// @param _message The encoded Action[] message.
-    /// @return messageId The bridge-level identifier of the sent message.
+    /// @return txId The Tx Id identifier for a forwarded message.
     function forwardMessage(uint256 _destinationChainId, uint256 _gasLimit, bytes memory _message)
         external
-        returns (bytes32 messageId);
+        returns (bytes32 txId);
 
     /// @notice The final destination for a message that arrives on remote chain.
     /// @param _messageId The bridge's own messageId for emit only.

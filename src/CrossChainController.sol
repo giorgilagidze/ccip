@@ -88,9 +88,9 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     /// @dev Pass an all-zero `ChainConfig` to clear/remove
     ///      or a fully set one to configure it.
     /// @param _chainIds The standard chain ids to configure. These are the
-    ///        REMOTE (destination/origin) chain ids, never this chain's own id:
-    ///        each entry keys the lane used to send to, and receive from, that
-    ///        remote chain.
+    ///        REMOTE (destination/origin) chain ids. Note that it allows
+    ///        to set config for this chain, allowing crosschain messages
+    ///        to occur from chain x to chain x.
     /// @param _configs The configuration per chain id.
     function updateConfig(uint256[] memory _chainIds, ChainConfig[] memory _configs)
         public
@@ -157,7 +157,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
 
         // Quote the SAME bytes `forwardMessage` will send.
         bytes memory encodedTx = Transaction({
-                nonce: _currentTxNonce,
+                nonce: _currentTxNonce + 1,
                 origin: msg.sender,
                 controller: address(this),
                 originChainId: block.chainid,
@@ -323,7 +323,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
 
     /// @notice Returns a state of transaction.
     /// @param _tx The transaction.
-    /// @return The state of the transaction(None, Delivered, Executed)
+    /// @return The state of the transaction(None, Delivered, Executed, Cancelled)
     function getTransactionState(Transaction memory _tx) public view virtual returns (TransactionState) {
         return _transactionState[_tx.id()];
     }
