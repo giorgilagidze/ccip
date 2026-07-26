@@ -9,20 +9,12 @@ import { Executor as CommonsExecutor } from "@aragon/osx-commons-contracts/src/e
 
 /// @title Executor
 /// @notice An `Executor` whose execution is restricted to a single owner.
-/// @dev The commons `Executor` is permissionless by design: anyone can call
-///      `execute`. This variant gates it behind `Ownable`, so it can be deployed
-///      standalone (not via `delegatecall`) and pointed at by a
-///      `CrossChainController` that is set as its owner.
 /// @custom:security-contact sirt@aragon.org
 contract Executor is CommonsExecutor, Ownable {
     /// @inheritdoc CommonsExecutor
     /// @dev Restricted to the owner; the rest of the behaviour (bounds check,
     ///      failure map, reentrancy guard, `Executed` event) is unchanged.
-    function execute(
-        bytes32 _callId,
-        Action[] memory _actions,
-        uint256 _allowFailureMap
-    )
+    function execute(bytes32 _callId, Action[] memory _actions, uint256 _allowFailureMap)
         public
         virtual
         override

@@ -31,9 +31,6 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
 
     /// @notice The fee token used to pay bridge fees.
     ///         `address(0)` = chain's native currency.
-    /// @dev a storage read here would resolve against
-    ///      the controller's slots under `delegatecall`.
-    ///      Changing the fee token requires a new adapter.
     address public immutable FEE_TOKEN;
 
     /// @notice The receive function must only allow CCIP router.
@@ -69,19 +66,21 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     }
 
     /// @inheritdoc IBaseAdapter
-    function quoteFee(address _receiver, uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
+    function quoteFee(uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
         public
         view
         virtual
         override
         returns (address, uint256)
     {
-        if (_receiver == address(0)) revert Errors.RECEIVER_ADDRESS_ZERO();
+        // The counterpart adapter on the destination chain.
+        address receiver = _remoteReceivers[_destinationChainId];
+        if (receiver == address(0)) revert Errors.RECEIVER_ADDRESS_ZERO();
 
         // Reverts if not set.
         uint64 nativeChainId = SafeCast.toUint64(toNativeChainId(_destinationChainId));
 
-        return (FEE_TOKEN, CCIP_ROUTER.getFee(nativeChainId, _buildMessage(_receiver, _gasLimit, _message, FEE_TOKEN)));
+        return (FEE_TOKEN, CCIP_ROUTER.getFee(nativeChainId, _buildMessage(receiver, _gasLimit, _message, FEE_TOKEN)));
     }
 
     /// @inheritdoc IBaseAdapter
@@ -105,7 +104,6 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         // CCIP does not refund overpayment, so quote and pay exactly.
         fee = CCIP_ROUTER.getFee(nativeChainId, ccipMessage);
 
-        // `address(this)` is the CONTROLLER here: it is the fee payer.
         if (FEE_TOKEN == address(0)) {
             uint256 balance = address(this).balance;
             if (balance < fee) {
@@ -114,8 +112,6 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
 
             messageId = CCIP_ROUTER.ccipSend{ value: fee }(nativeChainId, ccipMessage);
         } else {
-            // Native value would be stranded in the controller's balance while
-            // an ERC20 fee is due; surface the mistake instead.
             if (msg.value != 0) revert Errors.UNEXPECTED_NATIVE_VALUE();
 
             uint256 balance = IERC20(FEE_TOKEN).balanceOf(address(this));
@@ -123,13 +119,11 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
                 revert Errors.INSUFFICIENT_FEE_BALANCE(FEE_TOKEN, fee, balance);
             }
 
-            // The Router pulls the fee via `transferFrom` from the CONTROLLER,
-            // which is the account granting the allowance under `delegatecall`.
             IERC20(FEE_TOKEN).forceApprove(address(CCIP_ROUTER), fee);
 
             messageId = CCIP_ROUTER.ccipSend(nativeChainId, ccipMessage);
 
-            // Leave no standing allowance on the controller.
+            // Leave no standing allowance.
             IERC20(FEE_TOKEN).forceApprove(address(CCIP_ROUTER), 0);
         }
     }
@@ -149,7 +143,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public pure virtual returns (bool) {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IBaseAdapter).interfaceId
             || interfaceId == type(IERC165).interfaceId;
     }
@@ -183,25 +177,25 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     /// @inheritdoc IBaseAdapter
     function toNativeChainId(uint256 _chainId) public view virtual override returns (uint256) {
         if (_chainId == ChainIds.ETHEREUM) {
-            return uint64(5009297550715157269);
+            return 5009297550715157269;
         } else if (_chainId == ChainIds.AVALANCHE) {
-            return uint64(6433500567565415381);
+            return 6433500567565415381;
         } else if (_chainId == ChainIds.POLYGON) {
-            return uint64(4051577828743386545);
+            return 4051577828743386545;
         } else if (_chainId == ChainIds.BNB) {
-            return uint64(11344663589394136015);
+            return 11344663589394136015;
         } else if (_chainId == ChainIds.CELO) {
-            return uint64(1346049177634351622);
+            return 1346049177634351622;
         } else if (_chainId == ChainIds.SONIC) {
-            return uint64(1673871237479749969);
+            return 1673871237479749969;
         } else if (_chainId == ChainIds.PLASMA) {
-            return uint64(9335212494177455608);
+            return 9335212494177455608;
         } else if (_chainId == ChainIds.MONAD) {
-            return uint64(8481857512324358265);
+            return 8481857512324358265;
         } else if (_chainId == ChainIds.BASE) {
-            return uint64(15971525489660198786);
+            return 15971525489660198786;
         } else if (_chainId == ChainIds.ARBITRUM_ONE) {
-            return uint64(4949039107694359620);
+            return 4949039107694359620;
         }
         revert Errors.UNKNOWN_CHAIN_ID(_chainId);
     }

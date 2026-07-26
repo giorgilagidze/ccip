@@ -16,7 +16,7 @@ import { TransactionState } from "../lib/Transaction.sol";
 import { IBaseAdapter } from "./IBaseAdapter.sol";
 
 /// @title BaseAdapter
-/// @notice Shared logic for bridge adapters owned by a `CrossChainController`.
+/// @notice Shared logic for bridge adapters.
 /// @custom:security-contact sirt@aragon.org
 abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     using SafeERC20 for IERC20;
@@ -89,7 +89,6 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
 
     /// @notice Sets or clears the remote addresses trusted to originate
     ///         messages for their respective chains.
-    /// @dev Pass `address(0)` as `account` to clear a chain's entry.
     /// @param _trustedRemoteConfigs The remote trusted config.
     function updateTrustedRemotes(ChainAddressConfig[] memory _trustedRemoteConfigs)
         public
@@ -101,7 +100,6 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
 
     /// @notice Sets or clears the remote adapter addresses that messages bound
     ///         for their respective chains are delivered to.
-    /// @dev Pass `address(0)` as `account` to clear a chain's entry.
     /// @param _remoteReceiverConfigs The remote receiver config.
     function updateRemoteReceivers(ChainAddressConfig[] memory _remoteReceiverConfigs)
         public
@@ -160,12 +158,9 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
         return _messageState[_messageId];
     }
 
-    /// @inheritdoc IBaseAdapter
-    function toNativeChainId(uint256 _chainId) public view virtual override returns (uint256);
-
-    /// @notice The remote CONTROLLER trusted to originate messages for a chain.
+    /// @notice The remote adapter trusted to originate messages for a chain.
     /// @param _chainId The standard chain id.
-    /// @return The trusted remote controller address, or zero if unset.
+    /// @return The trusted remote adapter address, or zero if unset.
     function trustedRemote(uint256 _chainId) public view returns (address) {
         return _trustedRemotes[_chainId];
     }
@@ -227,8 +222,6 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     }
 
     /// @notice Sets the trusted remotes for receiving messages.
-    ///        Generally, it should be the cross chain controller
-    ///        of source chain.
     function _setTrustedRemotes(ChainAddressConfig[] memory _trustedRemoteConfigs) internal {
         for (uint256 i = 0; i < _trustedRemoteConfigs.length; i++) {
             uint256 chainId = _trustedRemoteConfigs[i].standardChainId;

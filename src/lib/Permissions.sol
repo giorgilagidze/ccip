@@ -6,7 +6,7 @@ pragma solidity ^0.8.8;
 /// @notice The permission ids used across the cross-chain contracts.
 /// @custom:security-contact sirt@aragon.org
 library Permissions {
-    /// @notice Permission to forward a message to a remote chain.
+    /// @notice Permission to send a message to a remote chain.
     bytes32 internal constant SEND_MESSAGE_PERMISSION_ID = keccak256("SEND_MESSAGE_PERMISSION");
 
     /// @notice Permission to (re)configure the remote addresses: the trusted
@@ -30,6 +30,6 @@ library Permissions {
     ///         (forward / receive / retry / cancel).
     bytes32 internal constant PAUSE_PERMISSION_ID = keccak256("PAUSE_PERMISSION");
 
-    /// @notice Permission to repoint this controller at a different executor.
+    /// @notice Permission to repoint this adapter at a different executor.
     bytes32 internal constant UPDATE_EXECUTOR_PERMISSION_ID = keccak256("UPDATE_EXECUTOR_PERMISSION");
 }

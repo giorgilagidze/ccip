@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.8;
 
 /// @title IBaseAdapter
 interface IBaseAdapter {
@@ -55,7 +55,9 @@ interface IBaseAdapter {
     function fromNativeChainId(uint256 _chainId) external view returns (uint256);
 
     /// @notice Quotes the bridge fee for a given message.
-    /// @param _receiver The address of the adapter on a remote chain.
+    /// @dev Quotes the exact message `sendMessage` would send: the receiver is
+    ///      resolved from the adapter's own remote-receiver config for
+    ///      `_destinationChainId`, so the quote always matches the send.
     /// @param _destinationChainId The standard destination chain id; the adapter
     ///        converts it to its own native chain id internally.
     /// @param _gasLimit The gas limit for cross-chain execution.
@@ -63,7 +65,7 @@ interface IBaseAdapter {
     /// @return feeToken The token the fee is denominated in. `address(0)`
     ///         means the chain's native currency.
     /// @return fee The amount of `feeToken` required to send the message.
-    function quoteFee(address _receiver, uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
+    function quoteFee(uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
         external
         view
         returns (address feeToken, uint256 fee);
