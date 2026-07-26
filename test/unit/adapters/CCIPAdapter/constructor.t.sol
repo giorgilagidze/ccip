@@ -10,22 +10,27 @@ import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 
 contract CCIPAdapterConstructorTest is CCIPAdapterBase {
     IBaseAdapter.ChainAddressConfig[] internal empty;
+    IBaseAdapter.ChainIdMappingConfig[] internal emptyChainIdMappings;
 
     function test_revertsIfRouterIsZeroAddress() public {
         vm.expectRevert(Errors.ZERO_ADDRESS.selector);
-        new CCIPAdapter(IDAO(address(daoMock)), address(daoMock), address(0), address(0), empty, empty);
+        new CCIPAdapter(
+            IDAO(address(daoMock)), address(daoMock), address(0), address(0), empty, empty, emptyChainIdMappings
+        );
     }
 
     function test_revertsIfExecutorIsZeroAddress() public {
         vm.expectRevert(Errors.ZERO_ADDRESS.selector);
-        new CCIPAdapter(IDAO(address(daoMock)), address(0), address(router), address(0), empty, empty);
+        new CCIPAdapter(
+            IDAO(address(daoMock)), address(0), address(router), address(0), empty, empty, emptyChainIdMappings
+        );
     }
 
     function test_revertsIfExecutorHasNoCode() public {
         address eoa = makeAddr("executorWithoutCode");
 
         vm.expectRevert(abi.encodeWithSelector(Errors.EXECUTOR_HAS_NO_CODE.selector, eoa));
-        new CCIPAdapter(IDAO(address(daoMock)), eoa, address(router), address(0), empty, empty);
+        new CCIPAdapter(IDAO(address(daoMock)), eoa, address(router), address(0), empty, empty, emptyChainIdMappings);
     }
 
     function test_revertsIfATrustedRemoteConfigUsesChainIdZero() public {
@@ -36,14 +41,49 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
             address(router),
             address(0),
             _config(0, remoteController),
-            empty
+            empty,
+            emptyChainIdMappings
         );
     }
 
     function test_revertsIfARemoteReceiverConfigUsesChainIdZero() public {
         vm.expectRevert(Errors.INVALID_CHAIN_ID.selector);
         new CCIPAdapter(
-            IDAO(address(daoMock)), address(daoMock), address(router), address(0), empty, _config(0, remoteAdapter)
+            IDAO(address(daoMock)),
+            address(daoMock),
+            address(router),
+            address(0),
+            empty,
+            _config(0, remoteAdapter),
+            emptyChainIdMappings
+        );
+    }
+
+    function test_revertsIfAChainIdMappingConfigUsesChainIdZero() public {
+        vm.expectRevert(Errors.INVALID_CHAIN_ID.selector);
+        new CCIPAdapter(
+            IDAO(address(daoMock)),
+            address(daoMock),
+            address(router),
+            address(0),
+            empty,
+            empty,
+            _chainIdMappingConfig(0, uint256(SEL_ETH_MAINNET))
+        );
+    }
+
+    function test_revertsIfASelectorExceedsUint64() public {
+        uint256 tooLarge = uint256(type(uint64).max) + 1;
+
+        vm.expectRevert();
+        new CCIPAdapter(
+            IDAO(address(daoMock)),
+            address(daoMock),
+            address(router),
+            address(0),
+            empty,
+            empty,
+            _chainIdMappingConfig(CHAIN_ETH_MAINNET, tooLarge)
         );
     }
 

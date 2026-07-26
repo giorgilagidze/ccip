@@ -85,7 +85,8 @@ abstract contract CCIPAdapterBase is Test {
             address(router),
             address(0), // native fee token
             trustedRemotes,
-            remoteReceivers
+            remoteReceivers,
+            _defaultChainIdMappings()
         );
 
         erc20Adapter = new CCIPAdapter(
@@ -94,8 +95,34 @@ abstract contract CCIPAdapterBase is Test {
             address(router),
             address(feeTokenErc20),
             trustedRemotes,
-            remoteReceivers
+            remoteReceivers,
+            _defaultChainIdMappings()
         );
+    }
+
+    /// @dev The chain id mappings the suite assumes are configured: the three
+    ///      chains the fixtures exercise. `SEL_SEPOLIA` is deliberately left
+    ///      out so the unmapped paths stay reachable.
+    function _defaultChainIdMappings() internal pure returns (IBaseAdapter.ChainIdMappingConfig[] memory configs) {
+        configs = new IBaseAdapter.ChainIdMappingConfig[](3);
+        configs[0] =
+            IBaseAdapter.ChainIdMappingConfig({ standardChainId: CHAIN_ETH_MAINNET, nativeChainId: uint256(SEL_ETH_MAINNET) });
+        configs[1] = IBaseAdapter.ChainIdMappingConfig({ standardChainId: CHAIN_BASE, nativeChainId: uint256(SEL_BASE) });
+        configs[2] = IBaseAdapter.ChainIdMappingConfig({
+            standardChainId: CHAIN_ARBITRUM_ONE,
+            nativeChainId: uint256(SEL_ARBITRUM_ONE)
+        });
+    }
+
+    /// @dev A single-entry chain id config array, for constructor arguments.
+    function _chainIdMappingConfig(uint256 standardChainId, uint256 nativeChainId)
+        internal
+        pure
+        returns (IBaseAdapter.ChainIdMappingConfig[] memory configs)
+    {
+        configs = new IBaseAdapter.ChainIdMappingConfig[](1);
+        configs[0] =
+            IBaseAdapter.ChainIdMappingConfig({ standardChainId: standardChainId, nativeChainId: nativeChainId });
     }
 
     // -------------------------------------------------------------------------

@@ -106,7 +106,8 @@ contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
             address(router),
             address(0),
             _config(CHAIN_ETH_MAINNET, remoteController),
-            _config(CHAIN_ETH_MAINNET, remoteAdapter)
+            _config(CHAIN_ETH_MAINNET, remoteAdapter),
+            _chainIdMappingConfig(CHAIN_ETH_MAINNET, uint256(SEL_ETH_MAINNET))
         );
     }
 

@@ -14,7 +14,6 @@ import { IAny2EVMMessageReceiver } from "@chainlink/contracts-ccip/contracts/int
 import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 
 import { Errors } from "../../lib/Errors.sol";
-import { ChainIds } from "../../lib/ChainIds.sol";
 
 import { BaseAdapter } from "../BaseAdapter.sol";
 import { IBaseAdapter } from "../IBaseAdapter.sol";
@@ -49,15 +48,18 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     /// @param _feeToken The fee token, or `address(0)` for native. IMMUTABLE.
     /// @param _trustedRemoteConfigs The remote trusted config.
     /// @param _remoteReceiverConfigs The remote receiver config.
+    /// @param _chainIdMappingConfigs The standard chain id <-> CCIP chain selector
+    ///        mappings. Each `nativeChainId` must fit in a `uint64`.
     constructor(
         IDAO _dao,
         address _executor,
         address _ccipRouter,
         address _feeToken,
         ChainAddressConfig[] memory _trustedRemoteConfigs,
-        ChainAddressConfig[] memory _remoteReceiverConfigs
+        ChainAddressConfig[] memory _remoteReceiverConfigs,
+        ChainIdMappingConfig[] memory _chainIdMappingConfigs
     )
-        BaseAdapter(_dao, _executor, _trustedRemoteConfigs, _remoteReceiverConfigs)
+        BaseAdapter(_dao, _executor, _trustedRemoteConfigs, _remoteReceiverConfigs, _chainIdMappingConfigs)
     {
         if (_ccipRouter == address(0)) revert Errors.ZERO_ADDRESS();
 
@@ -152,9 +154,29 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     // Internal
     // -------------------------------------------------------------------------
 
+    /// @inheritdoc BaseAdapter
+    /// @dev CCIP chain selectors are `uint64`, so an oversized value is rejected
+    ///      at write time rather than reverting later on the send path.
+    function _setChainIdMappings(ChainIdMappingConfig[] memory _chainIdMappingConfigs) internal virtual override {
+        for (uint256 i = 0; i < _chainIdMappingConfigs.length; i++) {
+            SafeCast.toUint64(_chainIdMappingConfigs[i].nativeChainId);
+        }
+
+        super._setChainIdMappings(_chainIdMappingConfigs);
+    }
+
+    /// @notice Builds the CCIP message for a send or a quote.
+    /// @dev Shared by `quoteFee` and `sendMessage` so a quote always describes
+    ///      exactly the message that would be sent.
+    /// @param _receiver The counterpart adapter on the destination chain.
+    /// @param _gasLimit The gas limit for cross-chain execution.
+    /// @param _message The encoded `Action[]` payload.
+    /// @param _feeToken The fee token; `address(0)` for native currency.
+    /// @return The CCIP message to quote or send.
     function _buildMessage(address _receiver, uint256 _gasLimit, bytes memory _message, address _feeToken)
         internal
         pure
+        virtual
         returns (Client.EVM2AnyMessage memory)
     {
         bytes memory extraArgs = Client._argsToBytes(
@@ -168,61 +190,5 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
             extraArgs: extraArgs,
             feeToken: _feeToken
         });
-    }
-
-    // -------------------------------------------------------------------------
-    // Chain id mapping
-    // -------------------------------------------------------------------------
-
-    /// @inheritdoc IBaseAdapter
-    function toNativeChainId(uint256 _chainId) public view virtual override returns (uint256) {
-        if (_chainId == ChainIds.ETHEREUM) {
-            return 5009297550715157269;
-        } else if (_chainId == ChainIds.AVALANCHE) {
-            return 6433500567565415381;
-        } else if (_chainId == ChainIds.POLYGON) {
-            return 4051577828743386545;
-        } else if (_chainId == ChainIds.BNB) {
-            return 11344663589394136015;
-        } else if (_chainId == ChainIds.CELO) {
-            return 1346049177634351622;
-        } else if (_chainId == ChainIds.SONIC) {
-            return 1673871237479749969;
-        } else if (_chainId == ChainIds.PLASMA) {
-            return 9335212494177455608;
-        } else if (_chainId == ChainIds.MONAD) {
-            return 8481857512324358265;
-        } else if (_chainId == ChainIds.BASE) {
-            return 15971525489660198786;
-        } else if (_chainId == ChainIds.ARBITRUM_ONE) {
-            return 4949039107694359620;
-        }
-        revert Errors.UNKNOWN_CHAIN_ID(_chainId);
-    }
-
-    /// @inheritdoc IBaseAdapter
-    function fromNativeChainId(uint256 _chainId) public view virtual override returns (uint256) {
-        if (_chainId == uint64(5009297550715157269)) {
-            return ChainIds.ETHEREUM;
-        } else if (_chainId == uint64(6433500567565415381)) {
-            return ChainIds.AVALANCHE;
-        } else if (_chainId == uint64(4051577828743386545)) {
-            return ChainIds.POLYGON;
-        } else if (_chainId == uint64(11344663589394136015)) {
-            return ChainIds.BNB;
-        } else if (_chainId == uint64(1346049177634351622)) {
-            return ChainIds.CELO;
-        } else if (_chainId == uint64(1673871237479749969)) {
-            return ChainIds.SONIC;
-        } else if (_chainId == uint64(9335212494177455608)) {
-            return ChainIds.PLASMA;
-        } else if (_chainId == uint64(8481857512324358265)) {
-            return ChainIds.MONAD;
-        } else if (_chainId == uint64(15971525489660198786)) {
-            return ChainIds.BASE;
-        } else if (_chainId == uint64(4949039107694359620)) {
-            return ChainIds.ARBITRUM_ONE;
-        }
-        revert Errors.UNKNOWN_NATIVE_CHAIN_ID(_chainId);
     }
 }

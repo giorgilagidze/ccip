@@ -224,7 +224,8 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
             address(routerB),
             address(feeTokenB),
             _config(CHAIN_BASE, remoteController),
-            _config(CHAIN_BASE, remoteAdapter)
+            _config(CHAIN_BASE, remoteAdapter),
+            _chainIdMappingConfig(CHAIN_BASE, uint256(SEL_BASE))
         );
 
         router.setFee(1 ether);
@@ -261,7 +262,8 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
             address(router),
             address(newFeeToken),
             _config(CHAIN_ETH_MAINNET, remoteController),
-            _config(CHAIN_ETH_MAINNET, remoteAdapter)
+            _config(CHAIN_ETH_MAINNET, remoteAdapter),
+            _chainIdMappingConfig(CHAIN_ETH_MAINNET, uint256(SEL_ETH_MAINNET))
         );
 
         router.setFee(1 ether);

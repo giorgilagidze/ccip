@@ -14,11 +14,28 @@ interface IBaseAdapter {
         address remote;
     }
 
+    /// @notice A standard chain id paired with the bridge's own native chain id.
+    /// @dev Passing `nativeChainId == 0` clears an existing mapping in both
+    ///      directions.
+    /// @param standardChainId The standard chain id of the remote chain.
+    /// @param nativeChainId The bridge-native identifier for that chain, e.g. a
+    ///        CCIP chain selector.
+    struct ChainIdMappingConfig {
+        uint256 standardChainId;
+        uint256 nativeChainId;
+    }
+
     /// @notice Emitted when a trusted remote is set or cleared.
     event TrustedRemoteSet(uint256 indexed chainId, address trustedRemote);
 
     /// @notice Emitted when a remote receiver is set or cleared.
     event RemoteReceiverSet(uint256 indexed chainId, address remoteReceiver);
+
+    /// @notice Emitted when a chain id mapping is set or cleared.
+    /// @param standardChainId The standard chain id.
+    /// @param nativeChainId The bridge-native chain id it maps to, or `0` when
+    ///        the mapping was cleared.
+    event ChainIdSet(uint256 indexed standardChainId, uint256 indexed nativeChainId);
 
     /// @notice Emitted when the executor is set or repointed.
     event ExecutorUpdated(address indexed oldExecutor, address indexed newExecutor);
@@ -53,6 +70,15 @@ interface IBaseAdapter {
     /// @return The transformed chain id into standard chain id.
     /// @dev MUST revert for unmapped chain ids instead of returning `0`.
     function fromNativeChainId(uint256 _chainId) external view returns (uint256);
+
+    /// @notice Sets or clears the standard <-> bridge-native chain id mappings.
+    /// @dev Both directions are written together, and the stale reverse entry of
+    ///      a remapped chain is cleared, so the two maps stay exact inverses.
+    ///      Security-relevant: this mapping resolves the origin chain of an
+    ///      inbound message before its trusted remote is checked.
+    /// @param _chainIdMappingConfigs The chain id mappings to apply. A `nativeChainId`
+    ///        of `0` clears the mapping for that standard chain id.
+    function updateChainIdMappings(ChainIdMappingConfig[] memory _chainIdMappingConfigs) external;
 
     /// @notice Quotes the bridge fee for a given message.
     /// @dev Quotes the exact message `sendMessage` would send: the receiver is

@@ -46,7 +46,7 @@ contract CCIPAdapterTrustedRemoteTest is CCIPAdapterBase {
                 address(daoMock),
                 address(adapter),
                 alice,
-                Permissions.UPDATE_REMOTES_PERMISSION_ID
+                Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID
             )
         );
         vm.prank(alice);
@@ -92,7 +92,7 @@ contract CCIPAdapterTrustedRemoteTest is CCIPAdapterBase {
                 address(daoMock),
                 address(adapter),
                 alice,
-                Permissions.UPDATE_REMOTES_PERMISSION_ID
+                Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID
             )
         );
         vm.prank(alice);

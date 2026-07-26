@@ -9,10 +9,11 @@ library Permissions {
     /// @notice Permission to send a message to a remote chain.
     bytes32 internal constant SEND_MESSAGE_PERMISSION_ID = keccak256("SEND_MESSAGE_PERMISSION");
 
-    /// @notice Permission to (re)configure the remote addresses: the trusted
-    ///         senders messages are accepted from, and the receivers messages
-    ///         are sent to.
-    bytes32 internal constant UPDATE_REMOTES_PERMISSION_ID = keccak256("UPDATE_REMOTES_PERMISSION");
+    /// @notice Permission to (re)configure the per-chain routing config: the
+    ///         trusted senders messages are accepted from, the receivers
+    ///         messages are sent to, and the standard <-> bridge-native chain
+    ///         id mappings.
+    bytes32 internal constant UPDATE_CHAIN_CONFIG_PERMISSION_ID = keccak256("UPDATE_CHAIN_CONFIG_PERMISSION");
 
     /// @notice Permission to retry a message whose execution reverted on
     ///         arrival. Intended for the DAO and/or an ops multisig, since the

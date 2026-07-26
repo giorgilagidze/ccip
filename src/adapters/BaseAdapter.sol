@@ -29,6 +29,15 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     ///         bound for that chain are delivered to.
     mapping(uint256 => address) internal _remoteReceivers;
 
+    /// @notice standard chain id -> bridge-native chain id.
+    /// @dev `0` means unmapped; the getters revert rather than returning it.
+    mapping(uint256 => uint256) internal _toNativeChainIds;
+
+    /// @notice bridge-native chain id -> standard chain id.
+    /// @dev The exact inverse of `_toNativeChainIds`, maintained together with
+    ///      it so neither can hold a stale entry.
+    mapping(uint256 => uint256) internal _fromNativeChainIds;
+
     /// @notice The executor that inbound payloads are executed on.
     address public executor;
 
@@ -45,17 +54,20 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     ///        DAO itself to keep execution on the DAO.
     /// @param _trustedRemoteConfigs The remote trusted config.
     /// @param _remoteReceiverConfigs The remote receiver config.
+    /// @param _chainIdMappingConfigs The standard <-> bridge-native chain id mappings.
     constructor(
         IDAO _dao,
         address _executor,
         ChainAddressConfig[] memory _trustedRemoteConfigs,
-        ChainAddressConfig[] memory _remoteReceiverConfigs
+        ChainAddressConfig[] memory _remoteReceiverConfigs,
+        ChainIdMappingConfig[] memory _chainIdMappingConfigs
     )
         DaoAuthorizable(_dao)
     {
         _setExecutor(_executor);
         _setTrustedRemotes(_trustedRemoteConfigs);
         _setRemoteReceivers(_remoteReceiverConfigs);
+        _setChainIdMappings(_chainIdMappingConfigs);
     }
 
     /// @notice Allows the adapter to be pre-funded with native currency to pay
@@ -93,7 +105,7 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     function updateTrustedRemotes(ChainAddressConfig[] memory _trustedRemoteConfigs)
         public
         virtual
-        auth(Permissions.UPDATE_REMOTES_PERMISSION_ID)
+        auth(Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID)
     {
         _setTrustedRemotes(_trustedRemoteConfigs);
     }
@@ -104,9 +116,35 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     function updateRemoteReceivers(ChainAddressConfig[] memory _remoteReceiverConfigs)
         public
         virtual
-        auth(Permissions.UPDATE_REMOTES_PERMISSION_ID)
+        auth(Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID)
     {
         _setRemoteReceivers(_remoteReceiverConfigs);
+    }
+
+    /// @inheritdoc IBaseAdapter
+    /// @dev Requires `UPDATE_CHAIN_CONFIG_PERMISSION_ID`.
+    function updateChainIdMappings(ChainIdMappingConfig[] memory _chainIdMappingConfigs)
+        public
+        virtual
+        auth(Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID)
+    {
+        _setChainIdMappings(_chainIdMappingConfigs);
+    }
+
+    /// @inheritdoc IBaseAdapter
+    function toNativeChainId(uint256 _chainId) public view virtual returns (uint256) {
+        uint256 nativeChainId = _toNativeChainIds[_chainId];
+        if (nativeChainId == 0) revert Errors.UNKNOWN_CHAIN_ID(_chainId);
+
+        return nativeChainId;
+    }
+
+    /// @inheritdoc IBaseAdapter
+    function fromNativeChainId(uint256 _chainId) public view virtual returns (uint256) {
+        uint256 standardChainId = _fromNativeChainIds[_chainId];
+        if (standardChainId == 0) revert Errors.UNKNOWN_NATIVE_CHAIN_ID(_chainId);
+
+        return standardChainId;
     }
 
     /// @notice Re-executes a message that was delivered but whose execution
@@ -231,6 +269,42 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
             _trustedRemotes[chainId] = trustedRemote_;
 
             emit TrustedRemoteSet(chainId, trustedRemote_);
+        }
+    }
+
+    /// @notice Writes the standard <-> bridge-native chain id mappings.
+    /// @dev Clears the stale reverse entries of both the standard chain id and
+    ///      the native chain id being (re)assigned, so the two maps stay exact
+    ///      inverses and no selector can resolve to a chain it is no longer
+    ///      bound to. A `nativeChainId` of `0` clears the mapping.
+    /// @param _chainIdMappingConfigs The chain id mappings to apply.
+    function _setChainIdMappings(ChainIdMappingConfig[] memory _chainIdMappingConfigs) internal virtual {
+        for (uint256 i = 0; i < _chainIdMappingConfigs.length; i++) {
+            uint256 standardChainId = _chainIdMappingConfigs[i].standardChainId;
+            if (standardChainId == 0) revert Errors.INVALID_CHAIN_ID();
+
+            uint256 nativeChainId = _chainIdMappingConfigs[i].nativeChainId;
+
+            // Drop whatever this standard chain id previously pointed at, so the
+            // old native id stops resolving back to it.
+            uint256 previousNativeChainId = _toNativeChainIds[standardChainId];
+            if (previousNativeChainId != 0) delete _fromNativeChainIds[previousNativeChainId];
+
+            // Likewise, a native id being reassigned must stop resolving to the
+            // standard chain that previously claimed it.
+            if (nativeChainId != 0) {
+                uint256 previousStandardChainId = _fromNativeChainIds[nativeChainId];
+                if (previousStandardChainId != 0) delete _toNativeChainIds[previousStandardChainId];
+            }
+
+            if (nativeChainId == 0) {
+                delete _toNativeChainIds[standardChainId];
+            } else {
+                _toNativeChainIds[standardChainId] = nativeChainId;
+                _fromNativeChainIds[nativeChainId] = standardChainId;
+            }
+
+            emit ChainIdSet(standardChainId, nativeChainId);
         }
     }
 
