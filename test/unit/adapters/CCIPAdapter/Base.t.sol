@@ -79,12 +79,10 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
 
         daoMock = new DAOMock();
         controller = CrossChainController(
-            payable(
-                ProxyLib.deployUUPSProxy(
+            payable(ProxyLib.deployUUPSProxy(
                     address(new CrossChainController()),
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock), false))
-                )
-            )
+                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock)))
+                ))
         );
         router = new CCIPRouterMock();
         feeTokenErc20 = new ERC20Mock("Fee Token", "FEE");

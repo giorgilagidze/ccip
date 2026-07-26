@@ -33,7 +33,7 @@ contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
     /// @dev The proxy is initialized by the fixture; a second call must revert.
     function test_initializeRevertsOnSecondCall() public {
         vm.expectRevert("Initializable: contract is already initialized");
-        controller.initialize(IDAO(address(daoMock)), address(daoMock), false);
+        controller.initialize(IDAO(address(daoMock)), address(daoMock));
     }
 
     // -------------------------------------------------------------------------

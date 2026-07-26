@@ -107,24 +107,13 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         daoMock.setHasPermission(address(controller), alice, updateExecutorPermissionId, true);
     }
 
-    /// @notice Deploys a UUPS proxy over `controllerImplementation` and
-    ///         initializes it. Mirrors how the plugin setup installs the plugin.
+    /// @notice Deploys a controller proxy.
     function deployController(address _dao, address _executor) internal returns (CrossChainController) {
-        return deployController(_dao, _executor, false);
-    }
-
-    /// @notice Deploys a controller proxy, optionally already frozen.
-    function deployController(address _dao, address _executor, bool _frozenUpgrade)
-        internal
-        returns (CrossChainController)
-    {
         return CrossChainController(
-            payable(
-                ProxyLib.deployUUPSProxy(
+            payable(ProxyLib.deployUUPSProxy(
                     address(controllerImplementation),
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), _executor, _frozenUpgrade))
-                )
-            )
+                    abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), _executor))
+                ))
         );
     }
 
@@ -208,7 +197,7 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
     // vacuously.
     //
     // slot 351 = `_currentTxNonce`, 352 = `_transactionState`,
-    // 353 = `chainToAdapter`, 354 = `executor` + `frozenUpgrade` (packed).
+    // 353 = `chainToAdapter`, 354 = `executor` (packed).
     // -------------------------------------------------------------------------
 
     uint256 internal constant NONCE_SLOT = 351;
@@ -250,9 +239,7 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         uint256 nonceBefore = uint256(vm.load(address(controller), bytes32(NONCE_SLOT)));
         vm.prank(alice);
         controller.forwardMessage(CHAIN_ID, GAS_LIMIT, _emptyActionsPayload());
-        assertEq(
-            uint256(vm.load(address(controller), bytes32(NONCE_SLOT))), nonceBefore + 1, "NONCE_SLOT stale"
-        );
+        assertEq(uint256(vm.load(address(controller), bytes32(NONCE_SLOT))), nonceBefore + 1, "NONCE_SLOT stale");
 
         // `_transactionState[txId]` -- set to `Executed` by the delivery above.
         bytes memory encodedTx = _encodedEmptyTx(1, CHAIN_ID);
