@@ -43,10 +43,6 @@ interface ICrossChainControllerEvents {
 
     /// @notice Emitted when fee assets are moved out of the contract.
     event Swept(address indexed token, address indexed to, uint256 amount);
-
-    /// @notice Emitted once, when the implementation is permanently frozen.
-    /// @param implementation The implementation the controller is frozen on.
-    event UpgradeFrozen(address indexed implementation);
 }
 
 /// @title ICrossChainController

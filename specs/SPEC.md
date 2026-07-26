@@ -75,7 +75,7 @@ flowchart TB
     ROUTER2[CCIPRouter L2]
     ADP2[CCIPAdapter L2]
     CCC2[CrossChainController]
-    DAO2["DAO L2<br/>—<br/>updateConfig<br/>pause / unpause<br/>upgradeTo<br/>cancelMessage<br/>retryMessage<br/>sweep<br/>updateExecutor<br/>freezeUpgrade"]
+    DAO2["DAO L2<br/>—<br/>updateConfig<br/>pause / unpause<br/>upgradeTo<br/>cancelMessage<br/>retryMessage<br/>sweep<br/>updateExecutor"]
     EXEC[Executor]
   end
 
@@ -108,7 +108,6 @@ recovered from while the system is paused.
 | `cancelMessage(encodedTx)` | `CANCEL_MESSAGE_PERMISSION` | Burns a `Delivered` message. The `txId` moves to `Cancelled` and never back to `None`, so it can never be re-delivered or retried. |
 | `updateConfig(chainIds, configs)` | `UPDATE_CONFIG_PERMISSION` | Sets or clears lanes, keyed by **remote** chain id. A lane must be fully set or fully cleared; chain id `0` is rejected as it marks "unset". |
 | `updateExecutor(executor)` | `UPDATE_EXECUTOR_PERMISSION` | Repoints the controller at a different execution target. Must be non-zero and have code. |
-| `freezeUpgrade()` | `FREEZE_UPGRADE_PERMISSION` | The controller is UUPS-upgradeable by default, so governance can ship fixes and new features. That upgradeability can be given up in either of two ways: deploy the controller already frozen, so it is pinned to its initial implementation from the start, or deploy it upgradeable and have governance call `freezeUpgrade` later, once the code is considered settled. Either way the freeze is **irreversible** — afterwards no upgrade can ever be applied, by anyone, including the DAO. |
 | `pause()` / `unpause()` | `PAUSE_PERMISSION` | Halts and resumes the four message paths. Intended for a bridge-independent guardian during an incident. |
 | `sweep(token, to, amount)` | `SWEEP_PERMISSION` | Moves pre-funded fee assets out, typically back to the DAO. `address(0)` means native currency. |
 
