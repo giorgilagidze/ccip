@@ -33,16 +33,14 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
         override
         returns (address plugin, PreparedSetupData memory preparedSetupData)
     {
-        (address executor, bool frozenUpgrade, address guardian) = decodeInstallationParameters(_data);
+        (address executor, address guardian) = decodeInstallationParameters(_data);
 
         // No executor requested: deploy a dedicated, owner-gated one.
         // ownership is handed to the crosschain controller plugin.
         bool deployedExecutor = executor == address(0);
         if (deployedExecutor) executor = address(new Executor());
 
-        plugin = IMPLEMENTATION.deployUUPSProxy(
-            abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), executor, frozenUpgrade))
-        );
+        plugin = IMPLEMENTATION.deployUUPSProxy(abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), executor)));
 
         // Only the plugin may execute inbound payloads on this executor.
         if (deployedExecutor) Executor(executor).transferOwnership(plugin);
@@ -93,12 +91,8 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
     }
 
     /// @notice Decodes the given byte array into the original installation parameters.
-    function decodeInstallationParameters(bytes memory _data)
-        public
-        pure
-        returns (address executor, bool frozenUpgrade, address guardian)
-    {
-        return abi.decode(_data, (address, bool, address));
+    function decodeInstallationParameters(bytes memory _data) public pure returns (address executor, address guardian) {
+        return abi.decode(_data, (address, address));
     }
 
     /// @notice Builds the plugin's full permission set for `_op`.
