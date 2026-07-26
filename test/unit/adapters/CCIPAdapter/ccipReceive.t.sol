@@ -5,9 +5,11 @@ pragma solidity ^0.8.17;
 import { CCIPAdapterBase } from "./Base.t.sol";
 import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import { CCIPAdapter } from "@src/adapters/CCIP/CCIPAdapter.sol";
+import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 import { Errors } from "@src/lib/Errors.sol";
-import { ChainIds } from "@src/lib/ChainIds.sol";
-import { Transaction, TransactionLib } from "@src/lib/Transaction.sol";
+import { TransactionState } from "@src/lib/Transaction.sol";
+import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
+import { ExecutorMock } from "@mocks/ExecutorMock.sol";
 
 contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
     function test_revertsIfCallerNotRouter() public {
@@ -35,7 +37,10 @@ contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
         adapter.ccipReceive(message);
     }
 
-    function test_revertsIfSenderIsRemoteAdapterInsteadOfRemoteController() public {
+    /// @dev The send target and the trusted sender are separate config entries.
+    ///      An inbound message from the SEND target must still be rejected
+    ///      unless it is also registered as the trusted remote.
+    function test_revertsIfSenderIsRemoteReceiverInsteadOfTrustedRemote() public {
         Client.Any2EVMMessage memory message = _buildInbound(SEL_ETH_MAINNET, remoteAdapter, "");
 
         vm.expectRevert(Errors.REMOTE_NOT_TRUSTED.selector);
@@ -43,35 +48,23 @@ contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
         adapter.ccipReceive(message);
     }
 
-    /// @dev The success path: sender IS the remote CONTROLLER. The inbound
-    ///      `data` is an encoded `Transaction` envelope (not a raw `Action[]`),
-    ///      and the emitted id is the envelope's `TransactionLib.id` derived
-    ///      from the decoded payload -- NOT a bridge-messageId-derived call id.
-    ///      `messageId` survives only as an event field.
-    function test_succeedsWhenSenderIsRemoteControllerAndForwardsToController() public {
-        _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
-
-        Transaction memory transaction = Transaction({
-            nonce: 1,
-            origin: remoteController,
-            controller: remoteController,
-            originChainId: CHAIN_ETH_MAINNET,
-            destinationChainId: block.chainid,
-            message: _emptyActionsPayload()
-        });
-        bytes memory payload = TransactionLib.encode(transaction);
-        bytes32 expectedTxId = TransactionLib.id(transaction);
-
+    /// @dev The success path: sender IS the trusted remote. The payload is a
+    ///      raw encoded `Action[]`, executed on the executor and keyed by the
+    ///      bridge's own `messageId`.
+    function test_succeedsWhenSenderIsTrustedRemoteAndExecutes() public {
+        bytes memory payload = _emptyActionsPayload();
         bytes32 messageId = keccak256("msg-1");
 
         Client.Any2EVMMessage memory message = _buildInbound(SEL_ETH_MAINNET, remoteController, payload);
         message.messageId = messageId;
 
-        vm.expectEmit(true, true, true, true, address(controller));
-        emit MessageReceived(CHAIN_ETH_MAINNET, messageId, expectedTxId, payload);
+        vm.expectEmit(true, true, true, true, address(adapter));
+        emit IBaseAdapter.MessageReceived(CHAIN_ETH_MAINNET, messageId, payload);
 
         vm.prank(address(router));
         adapter.ccipReceive(message);
+
+        assertEq(uint256(adapter.getMessageState(messageId)), uint256(TransactionState.Executed));
     }
 
     /// @dev A message arriving from a selector never mapped to a standard chain
@@ -85,40 +78,68 @@ contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
         adapter.ccipReceive(message);
     }
 
-    // -------------------------------------------------------------------------
-    // The DELEGATE_CALL_FORBIDDEN receive-path guard.
-    // -------------------------------------------------------------------------
+    /// @dev The same bridge message id must never be delivered twice.
+    function test_revertsIfMessageIdAlreadyDelivered() public {
+        Client.Any2EVMMessage memory message =
+            _buildInbound(SEL_ETH_MAINNET, remoteController, _emptyActionsPayload());
 
-    /// @dev Proves that reaching the RECEIVE path under `delegatecall` reverts.
-    ///      The native<->standard map is hardcoded pure logic, so no storage is
-    ///      needed for it -- `SEL_ETH_MAINNET` resolves to `ChainIds.ETHEREUM`
-    ///      on its own. The ONLY storage read on the way to `_forwardMessage` is
-    ///      `_trustedRemotes[originChainId]` (slot 0), which under `delegatecall`
-    ///      resolves against `delegateCallerMock`'s own (otherwise empty)
-    ///      storage. We plant a matching trusted-remote entry there via
-    ///      `vm.store` so the trusted-remote check passes and execution genuinely
-    ///      reaches `_forwardMessage`, tripping `DELEGATE_CALL_FORBIDDEN`
-    ///      specifically rather than `REMOTE_NOT_TRUSTED` first.
-    function test_delegatecalledIntoAdapter_revertsWithDelegateCallForbidden() public {
-        // `fromNativeChainId(SEL_ETH_MAINNET)` is pure and returns this.
-        uint256 originChainId = ChainIds.ETHEREUM;
-        address fakeTrustedSender = makeAddr("fakeTrustedSenderForDelegatecallProbe");
-
-        // `_trustedRemotes[originChainId] = fakeTrustedSender` at slot 0,
-        // computed against `delegateCallerMock`'s own (otherwise empty) storage.
-        bytes32 trustedRemoteSlot = keccak256(abi.encode(originChainId, uint256(0)));
-        vm.store(address(delegateCallerMock), trustedRemoteSlot, bytes32(uint256(uint160(fakeTrustedSender))));
-
-        Client.Any2EVMMessage memory message = _buildInbound(SEL_ETH_MAINNET, fakeTrustedSender, "");
+        vm.prank(address(router));
+        adapter.ccipReceive(message);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                Errors.DELEGATE_CALL_FORBIDDEN.selector,
-                address(delegateCallerMock), // address(this) during the delegatecalled execution
-                address(adapter) // the adapter's immutable `_selfAddress`
-            )
+            abi.encodeWithSelector(Errors.MESSAGE_ALREADY_DELIVERED_OR_EXECUTED.selector, message.messageId)
         );
-        vm.prank(address(router)); // `onlyRouter` checks msg.sender, preserved across delegatecall.
-        delegateCallerMock.delegateCall(address(adapter), abi.encodeCall(CCIPAdapter.ccipReceive, (message)));
+        vm.prank(address(router));
+        adapter.ccipReceive(message);
+    }
+
+    // -------------------------------------------------------------------------
+    // Deliver-but-fail: a reverting payload must NOT revert bridge delivery.
+    // -------------------------------------------------------------------------
+
+    /// @dev Builds an adapter whose executor can be made to revert on demand.
+    function _adapterWithFailingExecutor() internal returns (CCIPAdapter failAdapter, ExecutorMock executorMock) {
+        executorMock = new ExecutorMock();
+        failAdapter = new CCIPAdapter(
+            IDAO(address(daoMock)),
+            address(executorMock),
+            address(router),
+            address(0),
+            _config(CHAIN_ETH_MAINNET, remoteController),
+            _config(CHAIN_ETH_MAINNET, remoteAdapter)
+        );
+    }
+
+    function test_failedExecution_isRecordedAsDeliveredInsteadOfReverting() public {
+        (CCIPAdapter failAdapter, ExecutorMock executorMock) = _adapterWithFailingExecutor();
+        executorMock.setShouldRevert(true);
+
+        bytes memory payload = _emptyActionsPayload();
+        Client.Any2EVMMessage memory message = _buildInbound(SEL_ETH_MAINNET, remoteController, payload);
+
+        // Delivery itself must succeed, so the bridge never sees a revert.
+        vm.prank(address(router));
+        failAdapter.ccipReceive(message);
+
+        assertEq(
+            uint256(failAdapter.getMessageState(message.messageId)),
+            uint256(TransactionState.Delivered),
+            "a failed payload must be retained as Delivered"
+        );
+    }
+
+    function test_malformedPayload_isCapturedForRetryInsteadOfReverting() public {
+        // Not a valid `Action[]` encoding: decoding reverts inside the self-call.
+        bytes memory malformed = hex"deadbeef";
+        Client.Any2EVMMessage memory message = _buildInbound(SEL_ETH_MAINNET, remoteController, malformed);
+
+        vm.prank(address(router));
+        adapter.ccipReceive(message);
+
+        assertEq(
+            uint256(adapter.getMessageState(message.messageId)),
+            uint256(TransactionState.Delivered),
+            "a malformed payload must be captured, not revert delivery"
+        );
     }
 }

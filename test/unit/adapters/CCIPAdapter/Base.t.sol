@@ -7,23 +7,20 @@ import { Test } from "forge-std/Test.sol";
 import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 
 import { CCIPAdapter } from "@src/adapters/CCIP/CCIPAdapter.sol";
-import { BaseAdapter } from "@src/adapters/BaseAdapter.sol";
-import { CrossChainController } from "@src/CrossChainController.sol";
-import { ICrossChainControllerEvents, ICrossChainController } from "@src/ICrossChainController.sol";
+import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 import { ChainIds } from "@src/lib/ChainIds.sol";
 import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
-import { ProxyLib } from "@aragon/osx-commons-contracts/src/utils/deployment/ProxyLib.sol";
 import { DAOMock } from "@osx-test/mocks/commons/dao/DAOMock.sol";
 import { ERC20Mock } from "@mocks/ERC20Mock.sol";
 import { CCIPRouterMock } from "@mocks/CCIPRouterMock.sol";
-import { DelegateCallerMock } from "@mocks/DelegateCallerMock.sol";
 
 /// @title CCIPAdapterBase
 /// @notice Shared fixture for the per-function `CCIPAdapter` unit tests:
-///         deploys the controller, router, fee token, and the several adapter
-///         instances the suite needs, plus the inbound-message / lane helpers.
-abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
+///         deploys the DAO (which doubles as the executor), router, fee token,
+///         and the adapter instances the suite needs, plus inbound-message and
+///         remote-config helpers.
+abstract contract CCIPAdapterBase is Test {
     // -------------------------------------------------------------------------
     // Real CCIP chain selectors / standard chain ids used throughout.
     // -------------------------------------------------------------------------
@@ -35,16 +32,15 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     // absent from the production map), used to exercise the unmapped path.
     uint64 internal constant SEL_SEPOLIA = 16015286601757825753;
 
-    // Standard chain ids come from `ChainIds` (src/common/crosschain/lib).
+    // Standard chain ids come from `ChainIds` (src/lib/ChainIds.sol).
     uint256 internal constant CHAIN_ETH_MAINNET = ChainIds.ETHEREUM;
     uint256 internal constant CHAIN_BASE = ChainIds.BASE;
     uint256 internal constant CHAIN_ARBITRUM_ONE = ChainIds.ARBITRUM_ONE;
 
-    // Events come from `ICrossChainControllerEvents` (inherited), so
-    // `vm.expectEmit` can `emit` them without a local redeclaration.
+    // Events come from `IBaseAdapter` (inherited), so `vm.expectEmit` can
+    // `emit` them without a local redeclaration.
 
     DAOMock internal daoMock;
-    CrossChainController internal controller;
     CCIPRouterMock internal router;
     ERC20Mock internal feeTokenErc20;
 
@@ -55,21 +51,15 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     ///      instance -- there is no setter to flip `adapter` itself over.
     CCIPAdapter internal erc20Adapter;
 
-    /// @dev Drives the guard-isolation tests that the real controller cannot
-    ///      reach (see `DelegateCallerMock`'s own docs).
-    DelegateCallerMock internal delegateCallerMock;
-    /// @dev An adapter whose `CROSS_CHAIN_CONTROLLER` is `delegateCallerMock`,
-    ///      used only by those isolation tests.
-    CCIPAdapter internal isolationAdapter;
-
     address internal alice;
-    /// @dev The remote chain's CONTROLLER -- the address CCIP reports as the
-    ///      message sender on receive, because the source-chain send is a
-    ///      `delegatecall`. This is what `_trustedRemotes[chainId]` holds.
+    /// @dev The remote chain's ADAPTER as seen on the RECEIVE path -- the
+    ///      address CCIP reports as the message sender. This is what
+    ///      `_trustedRemotes[chainId]` holds.
     address internal remoteController;
-    /// @dev The remote chain's ADAPTER -- the bridge-level receiver, i.e. what
-    ///      `CrossChainController.chainToAdapter[chainId].remoteAdapter` holds.
-    ///      NEVER a valid value for `_trustedRemotes`.
+    /// @dev The remote chain's ADAPTER as the SEND target -- what
+    ///      `_remoteReceivers[chainId]` holds and the router is asked to
+    ///      deliver to. NEVER a valid value for `_trustedRemotes` in these
+    ///      tests, so the two directions stay distinguishable.
     address internal remoteAdapter;
 
     function setUp() public virtual {
@@ -78,39 +68,33 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
         remoteAdapter = makeAddr("remoteAdapter");
 
         daoMock = new DAOMock();
-        controller = CrossChainController(
-            payable(
-                ProxyLib.deployUUPSProxy(
-                    address(new CrossChainController()),
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock), false))
-                )
-            )
-        );
         router = new CCIPRouterMock();
         feeTokenErc20 = new ERC20Mock("Fee Token", "FEE");
 
-        BaseAdapter.TrustedRemoteConfig[] memory trustedRemotes = new BaseAdapter.TrustedRemoteConfig[](1);
+        IBaseAdapter.ChainAddressConfig[] memory trustedRemotes = new IBaseAdapter.ChainAddressConfig[](1);
         trustedRemotes[0] =
-            BaseAdapter.TrustedRemoteConfig({ standardChainId: CHAIN_ETH_MAINNET, trustedRemote: remoteController });
+            IBaseAdapter.ChainAddressConfig({ standardChainId: CHAIN_ETH_MAINNET, remote: remoteController });
 
-        adapter =
-            new CCIPAdapter(
-                address(controller),
-                address(router),
-                address(0), // native fee token
-                trustedRemotes
-            );
+        IBaseAdapter.ChainAddressConfig[] memory remoteReceivers = new IBaseAdapter.ChainAddressConfig[](1);
+        remoteReceivers[0] =
+            IBaseAdapter.ChainAddressConfig({ standardChainId: CHAIN_ETH_MAINNET, remote: remoteAdapter });
 
-        erc20Adapter = new CCIPAdapter(
-            address(controller), address(router), address(feeTokenErc20), new BaseAdapter.TrustedRemoteConfig[](0)
+        adapter = new CCIPAdapter(
+            IDAO(address(daoMock)),
+            address(daoMock), // executor
+            address(router),
+            address(0), // native fee token
+            trustedRemotes,
+            remoteReceivers
         );
 
-        delegateCallerMock = new DelegateCallerMock(IDAO(address(daoMock)));
-        isolationAdapter = new CCIPAdapter(
-            address(delegateCallerMock),
+        erc20Adapter = new CCIPAdapter(
+            IDAO(address(daoMock)),
+            address(daoMock),
             address(router),
             address(feeTokenErc20),
-            new BaseAdapter.TrustedRemoteConfig[](0)
+            trustedRemotes,
+            remoteReceivers
         );
     }
 
@@ -124,24 +108,32 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
         daoMock.setHasPermissionReturnValueMock(true);
     }
 
-    /// @dev Registers `localAdapter`/`remoteAdapterAddr` as the controller's
-    ///      lane for `chainId`. Grants `UPDATE_CONFIG_PERMISSION` in the process.
-    function _registerLane(uint256 chainId, address localAdapter, address remoteAdapterAddr) internal {
+    /// @dev Points `_remoteReceivers[chainId]` at `receiver` on `target`.
+    ///      Grants every permission in the process.
+    function _setRemoteReceiver(CCIPAdapter target, uint256 chainId, address receiver) internal {
         _grantAllPermissions();
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = chainId;
-        ICrossChainController.ChainConfig[] memory configs = new ICrossChainController.ChainConfig[](1);
-        configs[0] = ICrossChainController.ChainConfig({ localAdapter: localAdapter, remoteAdapter: remoteAdapterAddr });
-        controller.updateConfig(ids, configs);
+        IBaseAdapter.ChainAddressConfig[] memory configs = new IBaseAdapter.ChainAddressConfig[](1);
+        configs[0] = IBaseAdapter.ChainAddressConfig({ standardChainId: chainId, remote: receiver });
+        target.updateRemoteReceivers(configs);
     }
 
-    /// @dev Clears a previously-registered lane (all-zero config).
-    function _clearLane(uint256 chainId) internal {
+    /// @dev Points `_trustedRemotes[chainId]` at `trusted` on `target`.
+    ///      Grants every permission in the process.
+    function _setTrustedRemote(CCIPAdapter target, uint256 chainId, address trusted) internal {
         _grantAllPermissions();
-        uint256[] memory ids = new uint256[](1);
-        ids[0] = chainId;
-        ICrossChainController.ChainConfig[] memory configs = new ICrossChainController.ChainConfig[](1);
-        controller.updateConfig(ids, configs);
+        IBaseAdapter.ChainAddressConfig[] memory configs = new IBaseAdapter.ChainAddressConfig[](1);
+        configs[0] = IBaseAdapter.ChainAddressConfig({ standardChainId: chainId, remote: trusted });
+        target.updateTrustedRemotes(configs);
+    }
+
+    /// @dev A single-entry config array, for constructor arguments.
+    function _config(uint256 chainId, address remote)
+        internal
+        pure
+        returns (IBaseAdapter.ChainAddressConfig[] memory configs)
+    {
+        configs = new IBaseAdapter.ChainAddressConfig[](1);
+        configs[0] = IBaseAdapter.ChainAddressConfig({ standardChainId: chainId, remote: remote });
     }
 
     function _buildInbound(uint64 selector, address sender, bytes memory data)
@@ -161,19 +153,4 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     function _emptyActionsPayload() internal pure returns (bytes memory) {
         return abi.encode(new Action[](0));
     }
-
-    // -------------------------------------------------------------------------
-    // Controller storage-slot helpers (verified via
-    // `forge inspect src/CrossChainController.sol:CrossChainController storage`).
-    //
-    // The controller's own variables start at slot 351 -- everything below
-    // belongs to the upgradeable inheritance chain. Re-run the command above
-    // after any change to the base contracts or declaration order; a stale
-    // value makes the collision test read an untouched word and pass vacuously.
-    // -------------------------------------------------------------------------
-
-    uint256 internal constant PAUSED_SLOT = 301;
-    uint256 internal constant NONCE_SLOT = 351;
-    uint256 internal constant TRANSACTION_STATE_SLOT = 352;
-    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 353;
 }

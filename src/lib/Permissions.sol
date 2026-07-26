@@ -7,10 +7,12 @@ pragma solidity ^0.8.8;
 /// @custom:security-contact sirt@aragon.org
 library Permissions {
     /// @notice Permission to forward a message to a remote chain.
-    bytes32 internal constant FORWARD_MESSAGE_PERMISSION_ID = keccak256("FORWARD_MESSAGE_PERMISSION");
+    bytes32 internal constant SEND_MESSAGE_PERMISSION_ID = keccak256("SEND_MESSAGE_PERMISSION");
 
-    /// @notice Permission to (re)configure the config.
-    bytes32 internal constant UPDATE_CONFIG_PERMISSION_ID = keccak256("UPDATE_CONFIG_PERMISSION");
+    /// @notice Permission to (re)configure the remote addresses: the trusted
+    ///         senders messages are accepted from, and the receivers messages
+    ///         are sent to.
+    bytes32 internal constant UPDATE_REMOTES_PERMISSION_ID = keccak256("UPDATE_REMOTES_PERMISSION");
 
     /// @notice Permission to retry a message whose execution reverted on
     ///         arrival. Intended for the DAO and/or an ops multisig, since the
@@ -30,8 +32,4 @@ library Permissions {
 
     /// @notice Permission to repoint this controller at a different executor.
     bytes32 internal constant UPDATE_EXECUTOR_PERMISSION_ID = keccak256("UPDATE_EXECUTOR_PERMISSION");
-
-    /// @notice Permission to permanently freeze the controller's implementation,
-    ///         making every future upgrade impossible. One-way and irreversible.
-    bytes32 internal constant FREEZE_UPGRADE_PERMISSION_ID = keccak256("FREEZE_UPGRADE_PERMISSION");
 }

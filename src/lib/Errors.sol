@@ -155,4 +155,8 @@ library Errors {
     /// @notice Thrown when message delivered to the actual chain doesn't match
     ///         the chain sender intended to send.
     error INCORRECT_CHAIN_MISMATCH();
+
+    /// @notice Thrown when the payload supplied to a retry does not match the
+    ///         payload that was originally delivered for that message id.
+    error PAYLOAD_MISMATCH(bytes32 messageId);
 }

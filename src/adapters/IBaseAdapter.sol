@@ -3,9 +3,44 @@ pragma solidity ^0.8.0;
 
 /// @title IBaseAdapter
 interface IBaseAdapter {
-    /// @notice The address of cross chain controller that adapter stores
-    ///         to send/receive messages to/from.
-    function CROSS_CHAIN_CONTROLLER() external view returns (address);
+    /// @notice A standard chain id paired with a remote address.
+    /// @dev Used for both directions: as a trusted sender when receiving, and
+    ///      as the receiver when sending. Which one is meant is determined by
+    ///      the setter it is passed to.
+    /// @param standardChainId The standard chain id of remote chain.
+    /// @param remote The remote address for that chain.
+    struct ChainAddressConfig {
+        uint256 standardChainId;
+        address remote;
+    }
+
+    /// @notice Emitted when a trusted remote is set or cleared.
+    event TrustedRemoteSet(uint256 indexed chainId, address trustedRemote);
+
+    /// @notice Emitted when a remote receiver is set or cleared.
+    event RemoteReceiverSet(uint256 indexed chainId, address remoteReceiver);
+
+    /// @notice Emitted when the executor is set or repointed.
+    event ExecutorUpdated(address indexed oldExecutor, address indexed newExecutor);
+
+    /// @notice Emitted when pre-funded fee assets are moved out of this contract.
+    /// @param token The asset moved; `address(0)` for native currency.
+    /// @param to The recipient.
+    /// @param amount The amount moved.
+    event Swept(address indexed token, address indexed to, uint256 amount);
+
+    /// @notice Emitted when an inbound message executed successfully.
+    event MessageReceived(uint256 indexed originChainId, bytes32 indexed messageId, bytes payload);
+
+    /// @notice Emitted when an inbound message was delivered but its execution
+    ///         reverted. The payload is included so a retry can re-supply it.
+    event MessageExecutionFailed(uint256 indexed originChainId, bytes32 indexed messageId, bytes payload, bytes reason);
+
+    /// @notice Emitted when a previously failed message executed on retry.
+    event MessageRetried(bytes32 indexed messageId);
+
+    /// @notice Emitted when a delivered-but-failed message is cancelled.
+    event MessageCancelled(bytes32 indexed messageId);
 
     /// @notice Transforms standard chain id into adapter's own custom chain Ids.
     /// @param _chainId The standard chain Id.
@@ -34,20 +69,16 @@ interface IBaseAdapter {
         returns (address feeToken, uint256 fee);
 
     /// @notice Sends a message over the bridge.
-    /// @dev MUST be reached only by `delegatecall` from the
-    ///      `CROSS_CHAIN_CONTROLLER`; implementations MUST enforce this by
-    ///      checking `address(this) == CROSS_CHAIN_CONTROLLER`. The fee is paid
-    ///      directly out of the CONTROLLER's balance, because under
-    ///      `delegatecall` the controller is the account executing the bridge
-    ///      call. No fee hand-over, and no change to return.
-    /// @param _receiver The address of the adapter on a remote chain.
+    /// @dev The receiver is resolved from the adapter's own remote-receiver
+    ///      config for `_destinationChainId`. The fee is paid out of this
+    ///      adapter's own pre-funded balance.
     /// @param _destinationChainId The standard destination chain id; the adapter
     ///        converts it to its own native chain id internally.
     /// @param _gasLimit The gas limit for cross-chain execution.
     /// @param _message Encoded message.
     /// @return messageId The bridge's message identifier.
     /// @return fee The amount actually paid, for event reporting.
-    function sendMessage(address _receiver, uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
+    function sendMessage(uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
         external
         payable
         returns (bytes32 messageId, uint256 fee);

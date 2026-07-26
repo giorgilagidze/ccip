@@ -11,17 +11,17 @@ import { IRouterClient } from "@chainlink/contracts-ccip/contracts/interfaces/IR
 import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import { IAny2EVMMessageReceiver } from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
 
+import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
+
 import { Errors } from "../../lib/Errors.sol";
 import { ChainIds } from "../../lib/ChainIds.sol";
 
 import { BaseAdapter } from "../BaseAdapter.sol";
 import { IBaseAdapter } from "../IBaseAdapter.sol";
+import { Permissions } from "../../lib/Permissions.sol";
 
 /// @title CCIPAdapter
 /// @notice Chainlink CCIP implementation of `IBaseAdapter`.
-/// @dev The caller must call `sendMessage` via delegate call because:
-///          1. It's a controller that pays, not adapter.
-///          2. sender on the remote adapter must be crosschain controller, not the adapter.
 /// @custom:security-contact sirt@aragon.org
 contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     using SafeERC20 for IERC20;
@@ -46,17 +46,21 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         _;
     }
 
-    /// @param _crosschainController The owning controller.
+    /// @param _dao The DAO acting as this adapter's permission manager.
+    /// @param _executor The executor inbound payloads are executed on.
     /// @param _ccipRouter The CCIP router on this chain.
     /// @param _feeToken The fee token, or `address(0)` for native. IMMUTABLE.
     /// @param _trustedRemoteConfigs The remote trusted config.
+    /// @param _remoteReceiverConfigs The remote receiver config.
     constructor(
-        address _crosschainController,
+        IDAO _dao,
+        address _executor,
         address _ccipRouter,
         address _feeToken,
-        TrustedRemoteConfig[] memory _trustedRemoteConfigs
+        ChainAddressConfig[] memory _trustedRemoteConfigs,
+        ChainAddressConfig[] memory _remoteReceiverConfigs
     )
-        BaseAdapter(_crosschainController, _trustedRemoteConfigs)
+        BaseAdapter(_dao, _executor, _trustedRemoteConfigs, _remoteReceiverConfigs)
     {
         if (_ccipRouter == address(0)) revert Errors.ZERO_ADDRESS();
 
@@ -81,20 +85,22 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     }
 
     /// @inheritdoc IBaseAdapter
-    function sendMessage(address _receiver, uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
+    function sendMessage(uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
         public
         payable
         virtual
         override
-        onlyDelegatecallFromController
+        auth(Permissions.SEND_MESSAGE_PERMISSION_ID)
         returns (bytes32 messageId, uint256 fee)
     {
-        if (_receiver == address(0)) revert Errors.RECEIVER_ADDRESS_ZERO();
+        // The counterpart adapter on the destination chain.
+        address receiver = _remoteReceivers[_destinationChainId];
+        if (receiver == address(0)) revert Errors.RECEIVER_ADDRESS_ZERO();
 
         // Reverts if not set.
         uint64 nativeChainId = SafeCast.toUint64(toNativeChainId(_destinationChainId));
 
-        Client.EVM2AnyMessage memory ccipMessage = _buildMessage(_receiver, _gasLimit, _message, FEE_TOKEN);
+        Client.EVM2AnyMessage memory ccipMessage = _buildMessage(receiver, _gasLimit, _message, FEE_TOKEN);
 
         // CCIP does not refund overpayment, so quote and pay exactly.
         fee = CCIP_ROUTER.getFee(nativeChainId, ccipMessage);
