@@ -6,12 +6,11 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
 import { IRouterClient } from "@chainlink/contracts-ccip/contracts/interfaces/IRouterClient.sol";
 import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 import { IAny2EVMMessageReceiver } from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
-
-import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 
 import { Errors } from "../../lib/Errors.sol";
 
@@ -42,7 +41,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         _;
     }
 
-    /// @param _dao The DAO acting as this adapter's permission manager.
+    /// @param _admin The address granted `DEFAULT_ADMIN_ROLE`. Typically the DAO.
     /// @param _executor The executor inbound payloads are executed on.
     /// @param _ccipRouter The CCIP router on this chain.
     /// @param _feeToken The fee token, or `address(0)` for native. IMMUTABLE.
@@ -51,7 +50,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     /// @param _chainIdMappingConfigs The standard chain id <-> CCIP chain selector
     ///        mappings. Each `nativeChainId` must fit in a `uint64`.
     constructor(
-        IDAO _dao,
+        address _admin,
         address _executor,
         address _ccipRouter,
         address _feeToken,
@@ -59,7 +58,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         ChainAddressConfig[] memory _remoteReceiverConfigs,
         ChainIdMappingConfig[] memory _chainIdMappingConfigs
     )
-        BaseAdapter(_dao, _executor, _trustedRemoteConfigs, _remoteReceiverConfigs, _chainIdMappingConfigs)
+        BaseAdapter(_admin, _executor, _trustedRemoteConfigs, _remoteReceiverConfigs, _chainIdMappingConfigs)
     {
         if (_ccipRouter == address(0)) revert Errors.ZERO_ADDRESS();
 
@@ -91,7 +90,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         payable
         virtual
         override
-        auth(Permissions.SEND_MESSAGE_PERMISSION_ID)
+        onlyRole(Permissions.SEND_MESSAGE_ROLE)
         returns (bytes32 messageId, uint256 fee)
     {
         // The counterpart adapter on the destination chain.
@@ -145,9 +144,9 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
     }
 
     /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) public pure virtual returns (bool) {
+    function supportsInterface(bytes4 interfaceId) public view virtual override(AccessControl, IERC165) returns (bool) {
         return interfaceId == type(IAny2EVMMessageReceiver).interfaceId || interfaceId == type(IBaseAdapter).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+            || super.supportsInterface(interfaceId);
     }
 
     // -------------------------------------------------------------------------

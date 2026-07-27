@@ -8,7 +8,6 @@ import { CCIPAdapter } from "@src/adapters/CCIP/CCIPAdapter.sol";
 import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 import { Errors } from "@src/lib/Errors.sol";
 import { TransactionState } from "@src/lib/Transaction.sol";
-import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 import { ExecutorMock } from "@mocks/ExecutorMock.sol";
 
 contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
@@ -101,7 +100,7 @@ contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
     function _adapterWithFailingExecutor() internal returns (CCIPAdapter failAdapter, ExecutorMock executorMock) {
         executorMock = new ExecutorMock();
         failAdapter = new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(executorMock),
             address(router),
             address(0),

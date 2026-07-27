@@ -6,7 +6,6 @@ import { CCIPAdapterBase } from "./Base.t.sol";
 import { CCIPAdapter } from "@src/adapters/CCIP/CCIPAdapter.sol";
 import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 import { Errors } from "@src/lib/Errors.sol";
-import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 
 contract CCIPAdapterConstructorTest is CCIPAdapterBase {
     IBaseAdapter.ChainAddressConfig[] internal empty;
@@ -15,14 +14,14 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
     function test_revertsIfRouterIsZeroAddress() public {
         vm.expectRevert(Errors.ZERO_ADDRESS.selector);
         new CCIPAdapter(
-            IDAO(address(daoMock)), address(daoMock), address(0), address(0), empty, empty, emptyChainIdMappings
+            address(daoMock), address(daoMock), address(0), address(0), empty, empty, emptyChainIdMappings
         );
     }
 
     function test_revertsIfExecutorIsZeroAddress() public {
         vm.expectRevert(Errors.ZERO_ADDRESS.selector);
         new CCIPAdapter(
-            IDAO(address(daoMock)), address(0), address(router), address(0), empty, empty, emptyChainIdMappings
+            address(daoMock), address(0), address(router), address(0), empty, empty, emptyChainIdMappings
         );
     }
 
@@ -30,13 +29,13 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
         address eoa = makeAddr("executorWithoutCode");
 
         vm.expectRevert(abi.encodeWithSelector(Errors.EXECUTOR_HAS_NO_CODE.selector, eoa));
-        new CCIPAdapter(IDAO(address(daoMock)), eoa, address(router), address(0), empty, empty, emptyChainIdMappings);
+        new CCIPAdapter(address(daoMock), eoa, address(router), address(0), empty, empty, emptyChainIdMappings);
     }
 
     function test_revertsIfATrustedRemoteConfigUsesChainIdZero() public {
         vm.expectRevert(Errors.INVALID_CHAIN_ID.selector);
         new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(daoMock),
             address(router),
             address(0),
@@ -49,7 +48,7 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
     function test_revertsIfARemoteReceiverConfigUsesChainIdZero() public {
         vm.expectRevert(Errors.INVALID_CHAIN_ID.selector);
         new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(daoMock),
             address(router),
             address(0),
@@ -62,7 +61,7 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
     function test_revertsIfAChainIdMappingConfigUsesChainIdZero() public {
         vm.expectRevert(Errors.INVALID_CHAIN_ID.selector);
         new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(daoMock),
             address(router),
             address(0),
@@ -77,7 +76,7 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
 
         vm.expectRevert();
         new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(daoMock),
             address(router),
             address(0),
@@ -87,8 +86,17 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
         );
     }
 
-    function test_wiresUpDaoExecutorRouterAndFeeToken() public view {
-        assertEq(address(adapter.dao()), address(daoMock));
+    function test_revertsIfAdminIsZeroAddress() public {
+        vm.expectRevert(Errors.ZERO_ADDRESS.selector);
+        new CCIPAdapter(address(0), address(daoMock), address(router), address(0), empty, empty, emptyChainIdMappings);
+    }
+
+    function test_grantsDefaultAdminRoleToAdmin() public view {
+        assertTrue(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), address(daoMock)));
+        assertFalse(adapter.hasRole(adapter.DEFAULT_ADMIN_ROLE(), alice));
+    }
+
+    function test_wiresUpAdminExecutorRouterAndFeeToken() public view {
         assertEq(adapter.executor(), address(daoMock));
         assertEq(address(adapter.CCIP_ROUTER()), address(router));
         assertEq(adapter.FEE_TOKEN(), address(0));

@@ -7,31 +7,21 @@ import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol
 import { CCIPAdapter } from "@src/adapters/CCIP/CCIPAdapter.sol";
 import { Errors } from "@src/lib/Errors.sol";
 import { Permissions } from "@src/lib/Permissions.sol";
-import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
-import { DaoUnauthorized } from "@aragon/osx-commons-contracts/src/permission/auth/auth.sol";
 import { ERC20Mock } from "@mocks/ERC20Mock.sol";
 import { CCIPRouterMock } from "@mocks/CCIPRouterMock.sol";
 
 contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
     // -------------------------------------------------------------------------
-    // Authorization -- `sendMessage` is DAO-permissioned.
+    // Authorization -- `sendMessage` is role-gated.
     // -------------------------------------------------------------------------
 
-    function test_revertsIfCallerLacksSendMessagePermission() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DaoUnauthorized.selector,
-                address(daoMock),
-                address(adapter),
-                alice,
-                Permissions.SEND_MESSAGE_PERMISSION_ID
-            )
-        );
+    function test_revertsIfCallerLacksSendMessageRole() public {
+        vm.expectRevert(_missingRoleError(alice, Permissions.SEND_MESSAGE_ROLE));
         vm.prank(alice);
         adapter.sendMessage(CHAIN_ETH_MAINNET, 200_000, "");
     }
 
-    function test_succeedsForCallerWithSendMessagePermission() public {
+    function test_succeedsForCallerWithSendMessageRole() public {
         _grantAllPermissions();
         router.setFee(0.01 ether);
         vm.deal(address(adapter), 0.01 ether);
@@ -219,7 +209,7 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
         CCIPRouterMock routerB = new CCIPRouterMock();
         ERC20Mock feeTokenB = new ERC20Mock("Fee Token B", "FEEB");
         CCIPAdapter adapterB = new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(daoMock),
             address(routerB),
             address(feeTokenB),
@@ -257,7 +247,7 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
 
         ERC20Mock newFeeToken = new ERC20Mock("New Fee Token", "NEWFEE");
         CCIPAdapter newAdapter = new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock),
             address(daoMock),
             address(router),
             address(newFeeToken),
@@ -265,6 +255,8 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
             _config(CHAIN_ETH_MAINNET, remoteAdapter),
             _chainIdMappingConfig(CHAIN_ETH_MAINNET, uint256(SEL_ETH_MAINNET))
         );
+
+        _grantRole(newAdapter, Permissions.SEND_MESSAGE_ROLE, address(this));
 
         router.setFee(1 ether);
         newFeeToken.setBalance(address(newAdapter), 1 ether);

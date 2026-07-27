@@ -4,14 +4,16 @@ pragma solidity ^0.8.17;
 
 import { Test } from "forge-std/Test.sol";
 
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+
 import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
 
 import { CCIPAdapter } from "@src/adapters/CCIP/CCIPAdapter.sol";
 import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 import { ChainIds } from "@src/lib/ChainIds.sol";
 import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
-import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 import { DAOMock } from "@osx-test/mocks/commons/dao/DAOMock.sol";
+import { Permissions } from "@src/lib/Permissions.sol";
 import { ERC20Mock } from "@mocks/ERC20Mock.sol";
 import { CCIPRouterMock } from "@mocks/CCIPRouterMock.sol";
 
@@ -80,7 +82,7 @@ abstract contract CCIPAdapterBase is Test {
             IBaseAdapter.ChainAddressConfig({ standardChainId: CHAIN_ETH_MAINNET, remote: remoteAdapter });
 
         adapter = new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock), // admin
             address(daoMock), // executor
             address(router),
             address(0), // native fee token
@@ -90,7 +92,7 @@ abstract contract CCIPAdapterBase is Test {
         );
 
         erc20Adapter = new CCIPAdapter(
-            IDAO(address(daoMock)),
+            address(daoMock), // admin
             address(daoMock),
             address(router),
             address(feeTokenErc20),
@@ -129,25 +131,76 @@ abstract contract CCIPAdapterBase is Test {
     // Helpers
     // -------------------------------------------------------------------------
 
-    /// @dev `DAOMock.hasPermission` is a single flag that authorizes EVERY
-    ///      permission once toggled; only flip it inside tests that need it.
+    /// @dev The revert string OZ v4 `AccessControl` produces for a caller
+    ///      missing `role`. Pass to `vm.expectRevert(bytes(...))`.
+    function _missingRoleError(address account, bytes32 role) internal pure returns (bytes memory) {
+        return bytes(
+            string(
+                abi.encodePacked(
+                    "AccessControl: account ",
+                    Strings.toHexString(account),
+                    " is missing role ",
+                    Strings.toHexString(uint256(role), 32)
+                )
+            )
+        );
+    }
+
+    /// @dev Every role the adapter defines, so a single call can put a caller in
+    ///      the same position `DAOMock`'s all-or-nothing permission flag used to.
+    function _allRoles() internal pure returns (bytes32[] memory roles) {
+        roles = new bytes32[](7);
+        roles[0] = Permissions.SEND_MESSAGE_ROLE;
+        roles[1] = Permissions.UPDATE_CHAIN_CONFIG_ROLE;
+        roles[2] = Permissions.RETRY_MESSAGE_ROLE;
+        roles[3] = Permissions.CANCEL_MESSAGE_ROLE;
+        roles[4] = Permissions.SWEEP_ROLE;
+        roles[5] = Permissions.PAUSE_ROLE;
+        roles[6] = Permissions.UPDATE_EXECUTOR_ROLE;
+    }
+
+    /// @dev Grants `role` on `target` to `account`, acting as the admin
+    ///      (`daoMock` holds `DEFAULT_ADMIN_ROLE` on every fixture adapter).
+    function _grantRole(CCIPAdapter target, bytes32 role, address account) internal {
+        vm.prank(address(daoMock));
+        target.grantRole(role, account);
+    }
+
+    /// @dev Grants every adapter role on `target` to `account`.
+    function _grantAllRoles(CCIPAdapter target, address account) internal {
+        bytes32[] memory roles = _allRoles();
+        for (uint256 i = 0; i < roles.length; i++) {
+            _grantRole(target, roles[i], account);
+        }
+    }
+
+    /// @dev Grants every adapter role on both fixture adapters to every caller
+    ///      the suite drives them with -- this test contract and `alice`.
+    ///      Stands in for `DAOMock`'s old all-or-nothing permission flag.
     function _grantAllPermissions() internal {
-        daoMock.setHasPermissionReturnValueMock(true);
+        _grantAllRoles(adapter, address(this));
+        _grantAllRoles(erc20Adapter, address(this));
+        _grantAllRoles(adapter, alice);
+        _grantAllRoles(erc20Adapter, alice);
     }
 
     /// @dev Points `_remoteReceivers[chainId]` at `receiver` on `target`.
-    ///      Grants every permission in the process.
+    ///      Grants every role in the process, since callers routinely follow a
+    ///      reconfiguration with a send.
     function _setRemoteReceiver(CCIPAdapter target, uint256 chainId, address receiver) internal {
         _grantAllPermissions();
+        _grantAllRoles(target, address(this));
         IBaseAdapter.ChainAddressConfig[] memory configs = new IBaseAdapter.ChainAddressConfig[](1);
         configs[0] = IBaseAdapter.ChainAddressConfig({ standardChainId: chainId, remote: receiver });
         target.updateRemoteReceivers(configs);
     }
 
     /// @dev Points `_trustedRemotes[chainId]` at `trusted` on `target`.
-    ///      Grants every permission in the process.
+    ///      Grants every role in the process, for the same reason as
+    ///      `_setRemoteReceiver`.
     function _setTrustedRemote(CCIPAdapter target, uint256 chainId, address trusted) internal {
         _grantAllPermissions();
+        _grantAllRoles(target, address(this));
         IBaseAdapter.ChainAddressConfig[] memory configs = new IBaseAdapter.ChainAddressConfig[](1);
         configs[0] = IBaseAdapter.ChainAddressConfig({ standardChainId: chainId, remote: trusted });
         target.updateTrustedRemotes(configs);

@@ -6,7 +6,6 @@ import { CCIPAdapterBase } from "./Base.t.sol";
 import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 import { Errors } from "@src/lib/Errors.sol";
 import { Permissions } from "@src/lib/Permissions.sol";
-import { DaoUnauthorized } from "@aragon/osx-commons-contracts/src/permission/auth/auth.sol";
 
 contract CCIPAdapterTrustedRemoteTest is CCIPAdapterBase {
     // -------------------------------------------------------------------------
@@ -40,15 +39,7 @@ contract CCIPAdapterTrustedRemoteTest is CCIPAdapterBase {
     function test_updateTrustedRemotes_revertsForUnauthorizedCaller() public {
         IBaseAdapter.ChainAddressConfig[] memory configs = _config(CHAIN_BASE, remoteController);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DaoUnauthorized.selector,
-                address(daoMock),
-                address(adapter),
-                alice,
-                Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID
-            )
-        );
+        vm.expectRevert(_missingRoleError(alice, Permissions.UPDATE_CHAIN_CONFIG_ROLE));
         vm.prank(alice);
         adapter.updateTrustedRemotes(configs);
     }
@@ -86,15 +77,7 @@ contract CCIPAdapterTrustedRemoteTest is CCIPAdapterBase {
     function test_updateRemoteReceivers_revertsForUnauthorizedCaller() public {
         IBaseAdapter.ChainAddressConfig[] memory configs = _config(CHAIN_BASE, remoteAdapter);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DaoUnauthorized.selector,
-                address(daoMock),
-                address(adapter),
-                alice,
-                Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID
-            )
-        );
+        vm.expectRevert(_missingRoleError(alice, Permissions.UPDATE_CHAIN_CONFIG_ROLE));
         vm.prank(alice);
         adapter.updateRemoteReceivers(configs);
     }

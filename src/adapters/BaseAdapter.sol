@@ -5,8 +5,8 @@ pragma solidity ^0.8.8;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
-import { DaoAuthorizable } from "@aragon/osx-commons-contracts/src/permission/auth/DaoAuthorizable.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+
 import { Action, IExecutor } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 
 import { Errors } from "../lib/Errors.sol";
@@ -18,7 +18,7 @@ import { IBaseAdapter } from "./IBaseAdapter.sol";
 /// @title BaseAdapter
 /// @notice Shared logic for bridge adapters.
 /// @custom:security-contact sirt@aragon.org
-abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
+abstract contract BaseAdapter is IBaseAdapter, AccessControl {
     using SafeERC20 for IERC20;
 
     /// @notice standard chain id -> remote trusted address allowed
@@ -49,21 +49,23 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     ///      which is recoverable from the `MessageExecutionFailed` event.
     mapping(bytes32 => bytes32) internal _messagePayloadHash;
 
-    /// @param _dao The DAO acting as this adapter's permission manager.
+    /// @param _admin The address granted `DEFAULT_ADMIN_ROLE`, which administers
+    ///        every role on this adapter. Typically the DAO.
     /// @param _executor The executor inbound payloads are executed on. Pass the
     ///        DAO itself to keep execution on the DAO.
     /// @param _trustedRemoteConfigs The remote trusted config.
     /// @param _remoteReceiverConfigs The remote receiver config.
     /// @param _chainIdMappingConfigs The standard <-> bridge-native chain id mappings.
     constructor(
-        IDAO _dao,
+        address _admin,
         address _executor,
         ChainAddressConfig[] memory _trustedRemoteConfigs,
         ChainAddressConfig[] memory _remoteReceiverConfigs,
         ChainIdMappingConfig[] memory _chainIdMappingConfigs
-    )
-        DaoAuthorizable(_dao)
-    {
+    ) {
+        if (_admin == address(0)) revert Errors.ZERO_ADDRESS();
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+
         _setExecutor(_executor);
         _setTrustedRemotes(_trustedRemoteConfigs);
         _setRemoteReceivers(_remoteReceiverConfigs);
@@ -78,7 +80,7 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     /// @param _token The asset to move; `address(0)` for native currency.
     /// @param _to The recipient (typically the DAO).
     /// @param _amount The amount to move.
-    function sweep(address _token, address _to, uint256 _amount) public virtual auth(Permissions.SWEEP_PERMISSION_ID) {
+    function sweep(address _token, address _to, uint256 _amount) public virtual onlyRole(Permissions.SWEEP_ROLE) {
         if (_to == address(0)) revert Errors.ZERO_ADDRESS();
 
         if (_token == address(0)) {
@@ -95,7 +97,7 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     /// @notice Repoints this adapter at a different executor.
     /// @dev Inbound payloads are routed to this executor address for execution.
     /// @param _executor The new executor address.
-    function updateExecutor(address _executor) public virtual auth(Permissions.UPDATE_EXECUTOR_PERMISSION_ID) {
+    function updateExecutor(address _executor) public virtual onlyRole(Permissions.UPDATE_EXECUTOR_ROLE) {
         _setExecutor(_executor);
     }
 
@@ -105,7 +107,7 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     function updateTrustedRemotes(ChainAddressConfig[] memory _trustedRemoteConfigs)
         public
         virtual
-        auth(Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID)
+        onlyRole(Permissions.UPDATE_CHAIN_CONFIG_ROLE)
     {
         _setTrustedRemotes(_trustedRemoteConfigs);
     }
@@ -116,17 +118,17 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     function updateRemoteReceivers(ChainAddressConfig[] memory _remoteReceiverConfigs)
         public
         virtual
-        auth(Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID)
+        onlyRole(Permissions.UPDATE_CHAIN_CONFIG_ROLE)
     {
         _setRemoteReceivers(_remoteReceiverConfigs);
     }
 
     /// @inheritdoc IBaseAdapter
-    /// @dev Requires `UPDATE_CHAIN_CONFIG_PERMISSION_ID`.
+    /// @dev Requires `UPDATE_CHAIN_CONFIG_ROLE`.
     function updateChainIdMappings(ChainIdMappingConfig[] memory _chainIdMappingConfigs)
         public
         virtual
-        auth(Permissions.UPDATE_CHAIN_CONFIG_PERMISSION_ID)
+        onlyRole(Permissions.UPDATE_CHAIN_CONFIG_ROLE)
     {
         _setChainIdMappings(_chainIdMappingConfigs);
     }
@@ -155,7 +157,7 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     function retryMessage(bytes32 _messageId, bytes memory _payload)
         public
         virtual
-        auth(Permissions.RETRY_MESSAGE_PERMISSION_ID)
+        onlyRole(Permissions.RETRY_MESSAGE_ROLE)
     {
         if (_messageState[_messageId] != TransactionState.Delivered) {
             revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(_messageId);
@@ -178,7 +180,7 @@ abstract contract BaseAdapter is IBaseAdapter, DaoAuthorizable {
     ///      The message id stays occupied (state becomes `Cancelled`, not
     ///      `None`), so the same message can never be re-delivered or retried.
     /// @param _messageId The bridge message id to cancel.
-    function cancelMessage(bytes32 _messageId) public virtual auth(Permissions.CANCEL_MESSAGE_PERMISSION_ID) {
+    function cancelMessage(bytes32 _messageId) public virtual onlyRole(Permissions.CANCEL_MESSAGE_ROLE) {
         if (_messageState[_messageId] != TransactionState.Delivered) {
             revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(_messageId);
         }
