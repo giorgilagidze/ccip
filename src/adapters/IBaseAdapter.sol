@@ -99,7 +99,8 @@ interface IBaseAdapter {
     /// @notice Sends a message over the bridge.
     /// @dev The receiver is resolved from the adapter's own remote-receiver
     ///      config for `_destinationChainId`. The fee is paid out of this
-    ///      adapter's own pre-funded balance.
+    ///      adapter's own pre-funded balance. MUST revert while the adapter is
+    ///      paused.
     /// @param _destinationChainId The standard destination chain id; the adapter
     ///        converts it to its own native chain id internally.
     /// @param _gasLimit The gas limit for cross-chain execution.

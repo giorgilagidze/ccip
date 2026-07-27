@@ -91,6 +91,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         virtual
         override
         onlyRole(Permissions.SEND_MESSAGE_ROLE)
+        whenNotPaused
         returns (bytes32 messageId, uint256 fee)
     {
         // The counterpart adapter on the destination chain.

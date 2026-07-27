@@ -6,6 +6,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { Pausable } from "@openzeppelin/contracts/security/Pausable.sol";
 
 import { Action, IExecutor } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 
@@ -18,7 +19,7 @@ import { IBaseAdapter } from "./IBaseAdapter.sol";
 /// @title BaseAdapter
 /// @notice Shared logic for bridge adapters.
 /// @custom:security-contact sirt@aragon.org
-abstract contract BaseAdapter is IBaseAdapter, AccessControl {
+abstract contract BaseAdapter is IBaseAdapter, AccessControl, Pausable {
     using SafeERC20 for IERC20;
 
     /// @notice standard chain id -> remote trusted address allowed
@@ -75,6 +76,20 @@ abstract contract BaseAdapter is IBaseAdapter, AccessControl {
     /// @notice Allows the adapter to be pre-funded with native currency to pay
     ///         bridge fees, and to receive native refunds from the bridge.
     receive() external payable { }
+
+    /// @notice Halts the message paths: sending, inbound delivery, retry and
+    ///         cancel all revert while paused.
+    /// @dev Config and fee management (`sweep`, `updateExecutor`, the chain
+    ///      config setters) stay open, so a paused adapter can still be
+    ///      reconfigured and drained before it is resumed.
+    function pause() public virtual onlyRole(Permissions.PAUSE_ROLE) {
+        _pause();
+    }
+
+    /// @notice Resumes the message paths halted by `pause`.
+    function unpause() public virtual onlyRole(Permissions.PAUSE_ROLE) {
+        _unpause();
+    }
 
     /// @notice Moves pre-funded fee assets out of this contract.
     /// @param _token The asset to move; `address(0)` for native currency.
@@ -158,6 +173,7 @@ abstract contract BaseAdapter is IBaseAdapter, AccessControl {
         public
         virtual
         onlyRole(Permissions.RETRY_MESSAGE_ROLE)
+        whenNotPaused
     {
         if (_messageState[_messageId] != TransactionState.Delivered) {
             revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(_messageId);
@@ -180,7 +196,7 @@ abstract contract BaseAdapter is IBaseAdapter, AccessControl {
     ///      The message id stays occupied (state becomes `Cancelled`, not
     ///      `None`), so the same message can never be re-delivered or retried.
     /// @param _messageId The bridge message id to cancel.
-    function cancelMessage(bytes32 _messageId) public virtual onlyRole(Permissions.CANCEL_MESSAGE_ROLE) {
+    function cancelMessage(bytes32 _messageId) public virtual onlyRole(Permissions.CANCEL_MESSAGE_ROLE) whenNotPaused {
         if (_messageState[_messageId] != TransactionState.Delivered) {
             revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(_messageId);
         }
@@ -216,7 +232,13 @@ abstract contract BaseAdapter is IBaseAdapter, AccessControl {
     /// @param _messageId The bridge-level message identifier.
     /// @param _payload The encoded `Action[]` message.
     /// @param _originChainId The standard chain id the message came from.
-    function _forwardMessage(bytes32 _messageId, bytes memory _payload, uint256 _originChainId) internal {
+    /// @dev Reverts while paused, which rejects the delivery at the bridge
+    ///      rather than recording it. The message is not lost: it stays
+    ///      re-executable on the bridge side once the adapter is unpaused.
+    function _forwardMessage(bytes32 _messageId, bytes memory _payload, uint256 _originChainId)
+        internal
+        whenNotPaused
+    {
         // Either the message is already delivered or executed.
         if (_messageState[_messageId] != TransactionState.None) {
             revert Errors.MESSAGE_ALREADY_DELIVERED_OR_EXECUTED(_messageId);
