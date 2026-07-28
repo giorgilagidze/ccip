@@ -86,7 +86,14 @@ contract CrossChainControllerForwardMessageTest is CrossChainControllerBase {
 
         vm.expectEmit(true, true, true, true, address(controller));
         emit MessageForwarded(
-            CHAIN_ID, expectedMessageId, expectedTxId, expectedEnvelope, address(adapterA), remoteAdapterA, GAS_LIMIT, 0
+            CHAIN_ID,
+            uint256(expectedMessageId),
+            expectedTxId,
+            expectedEnvelope,
+            address(adapterA),
+            remoteAdapterA,
+            GAS_LIMIT,
+            0
         );
 
         vm.prank(alice);
@@ -243,7 +250,7 @@ contract CrossChainControllerForwardMessageTest is CrossChainControllerBase {
         );
 
         vm.expectEmit(true, true, true, false, address(controller));
-        emit MessageForwarded(CHAIN_ID, messageIdX, expectedTxId, "", address(0), address(0), 0, 0);
+        emit MessageForwarded(CHAIN_ID, uint256(messageIdX), expectedTxId, "", address(0), address(0), 0, 0);
 
         vm.prank(alice);
         bytes32 txId = controller.forwardMessage(CHAIN_ID, GAS_LIMIT, message);

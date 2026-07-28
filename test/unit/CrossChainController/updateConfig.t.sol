@@ -116,7 +116,7 @@ contract CrossChainControllerUpdateConfigTest is CrossChainControllerBase {
         _configureLane(CHAIN_ID, address(adapterA), remoteAdapterA);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
+        controller.receiveMessage(1, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
 
         // Rotate the lane to adapterB.
         _configureLane(CHAIN_ID, address(adapterB), remoteAdapterB);
@@ -125,11 +125,11 @@ contract CrossChainControllerUpdateConfigTest is CrossChainControllerBase {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.CALLER_NOT_LOCAL_ADAPTER.selector, address(adapterA)));
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(2)), _encodedEmptyTx(2, CHAIN_ID), CHAIN_ID);
+        controller.receiveMessage(2, _encodedEmptyTx(2, CHAIN_ID), CHAIN_ID);
 
         // The new adapter works.
         vm.prank(address(adapterB));
-        controller.receiveMessage(bytes32(uint256(3)), _encodedEmptyTx(3, CHAIN_ID), CHAIN_ID);
+        controller.receiveMessage(3, _encodedEmptyTx(3, CHAIN_ID), CHAIN_ID);
     }
 
     function test_adapterAuthorizedPerLaneUntilBothLanesCleared() public {
@@ -146,7 +146,7 @@ contract CrossChainControllerUpdateConfigTest is CrossChainControllerBase {
         assertTrue(controller.isRegisteredLocalAdapter(address(adapterA), OTHER_CHAIN_ID));
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), _encodedEmptyTx(1, OTHER_CHAIN_ID), OTHER_CHAIN_ID);
+        controller.receiveMessage(uint256(1), _encodedEmptyTx(1, OTHER_CHAIN_ID), OTHER_CHAIN_ID);
 
         // Clear the second (last) lane; adapterA now loses authorization there.
         _configureLane(OTHER_CHAIN_ID, address(0), address(0));
@@ -155,7 +155,7 @@ contract CrossChainControllerUpdateConfigTest is CrossChainControllerBase {
 
         vm.expectRevert(abi.encodeWithSelector(Errors.CALLER_NOT_LOCAL_ADAPTER.selector, address(adapterA)));
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(2)), _encodedEmptyTx(2, OTHER_CHAIN_ID), OTHER_CHAIN_ID);
+        controller.receiveMessage(uint256(2), _encodedEmptyTx(2, OTHER_CHAIN_ID), OTHER_CHAIN_ID);
     }
 
     function test_clearingLaneWithAllZeroConfigResetsMapping() public {

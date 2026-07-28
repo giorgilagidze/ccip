@@ -50,5 +50,5 @@ interface IBaseAdapter {
     function sendMessage(address _receiver, uint256 _destinationChainId, uint256 _gasLimit, bytes calldata _message)
         external
         payable
-        returns (bytes32 messageId, uint256 fee);
+        returns (uint256 messageId, uint256 fee);
 }

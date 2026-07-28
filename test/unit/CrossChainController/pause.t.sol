@@ -127,7 +127,7 @@ contract CrossChainControllerPauseTest is CrossChainControllerBase {
         // registered local adapter is blocked.
         vm.expectRevert(PAUSED_REVERT);
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
+        controller.receiveMessage(1, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
     }
 
     function test_retryMessageRevertsWhenPaused() public {
@@ -152,7 +152,7 @@ contract CrossChainControllerPauseTest is CrossChainControllerBase {
         bytes32 txId = TransactionLib.id(failedTx);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), TransactionLib.encode(failedTx), CHAIN_ID);
+        controller.receiveMessage(1, TransactionLib.encode(failedTx), CHAIN_ID);
 
         vm.prank(alice);
         controller.pause();
@@ -177,7 +177,7 @@ contract CrossChainControllerPauseTest is CrossChainControllerBase {
 
         // Does not revert with the paused error; delivers normally.
         vm.prank(address(adapterA));
-        bytes32 txId = controller.receiveMessage(bytes32(uint256(1)), _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
+        bytes32 txId = controller.receiveMessage(1, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
         assertEq(txId, _txId(1, CHAIN_ID, _emptyActionsPayload()));
     }
 

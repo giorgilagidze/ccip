@@ -94,7 +94,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         virtual
         override
         onlyDelegatecallFromController
-        returns (bytes32 messageId, uint256 fee)
+        returns (uint256, uint256)
     {
         if (_receiver == address(0)) revert Errors.ZERO_ADDRESS();
 
@@ -109,7 +109,9 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         Client.EVM2AnyMessage memory ccipMessage = _buildMessage(_receiver, _gasLimit, _message, FEE_TOKEN);
 
         // CCIP does not refund overpayment, so quote and pay exactly.
-        fee = CCIP_ROUTER.getFee(nativeChainId, ccipMessage);
+        uint256 fee = CCIP_ROUTER.getFee(nativeChainId, ccipMessage);
+
+        bytes32 messageId;
 
         // `address(this)` is the CONTROLLER here: it is the fee payer.
         if (FEE_TOKEN == address(0)) {
@@ -138,6 +140,8 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
             // Leave no standing allowance on the controller.
             IERC20(FEE_TOKEN).forceApprove(address(CCIP_ROUTER), 0);
         }
+
+        return (uint256(messageId), fee);
     }
 
     /// @inheritdoc IAny2EVMMessageReceiver
@@ -151,7 +155,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
             revert Errors.REMOTE_NOT_TRUSTED();
         }
 
-        _forwardMessage(message.messageId, message.data, originChainId);
+        _forwardMessage(uint256(message.messageId), message.data, originChainId);
     }
 
     /// @inheritdoc IERC165

@@ -18,7 +18,7 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
         address random = makeAddr("random");
         vm.expectRevert(abi.encodeWithSelector(Errors.CALLER_NOT_LOCAL_ADAPTER.selector, random));
         vm.prank(random);
-        controller.receiveMessage(bytes32(uint256(1)), _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
+        controller.receiveMessage(1, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
     }
 
     function test_revertsForUnregisteredContract() public {
@@ -28,15 +28,14 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
             new AdapterMock(address(controller), address(0), 0, bytes32(0), feeSinkA, false, false);
         vm.expectRevert(abi.encodeWithSelector(Errors.CALLER_NOT_LOCAL_ADAPTER.selector, address(strangerAdapter)));
         vm.prank(address(strangerAdapter));
-        controller.receiveMessage(bytes32(uint256(1)), _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
+        controller.receiveMessage(1, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
     }
 
     function test_succeedsForRegisteredLocalAdapter() public {
         _configureLane(CHAIN_ID, address(adapterA), remoteAdapterA);
 
-        bytes32 messageId = bytes32(uint256(42));
         vm.prank(address(adapterA));
-        bytes32 txId = controller.receiveMessage(messageId, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
+        bytes32 txId = controller.receiveMessage(42, _encodedEmptyTx(1, CHAIN_ID), CHAIN_ID);
 
         assertEq(txId, _txId(1, CHAIN_ID, _emptyActionsPayload()));
     }
@@ -56,14 +55,14 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
 
         // First delivery fails execution and is stored as `Delivered`.
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(7)), encodedTx, CHAIN_ID);
+        controller.receiveMessage(7, encodedTx, CHAIN_ID);
         assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Delivered));
 
         // Redelivering the same envelope (same txId) must revert, not
         // overwrite/duplicate it -- regardless of the bridge messageId.
         vm.expectRevert(abi.encodeWithSelector(Errors.MESSAGE_ALREADY_DELIVERED_OR_EXECUTED.selector, txId));
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(8)), encodedTx, CHAIN_ID);
+        controller.receiveMessage(8, encodedTx, CHAIN_ID);
     }
 
     /// @dev The nonce is what makes each delivery a distinct message. Deliver
@@ -85,7 +84,7 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
         bytes32 txId1 = _txId(1, CHAIN_ID, message);
 
         vm.prank(address(adapterA));
-        bytes32 returned1 = controller.receiveMessage(bytes32(uint256(1)), encodedTx1, CHAIN_ID);
+        bytes32 returned1 = controller.receiveMessage(1, encodedTx1, CHAIN_ID);
 
         assertEq(returned1, txId1);
         assertEq(uint256(controller.getTransaction(txId1).state), uint256(TransactionState.Executed));
@@ -100,7 +99,7 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
 
         vm.prank(address(adapterA));
         bytes32 returned2 = controller.receiveMessage(
-            bytes32(uint256(1)), // even the bridge messageId is reused: irrelevant
+            1, // even the bridge messageId is reused: irrelevant
             encodedTx2,
             CHAIN_ID
         );
@@ -124,7 +123,7 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
         bytes memory message = abi.encode(actions);
         bytes memory encodedTx = _encodedTx(55, CHAIN_ID, message);
 
-        bytes32 messageId = bytes32(uint256(55));
+        uint256 messageId = 55;
         bytes32 expectedTxId = _txId(55, CHAIN_ID, message);
         // `CrossChainControllerDAOMock.execute` bubbles the low-level call's
         // raw returndata on failure, which is `ActionExecute.fail`'s
@@ -153,7 +152,7 @@ contract CrossChainControllerReceiveMessageTest is CrossChainControllerBase {
         bytes memory garbageMessage = hex"deadbeef";
         bytes memory encodedTx = _encodedTx(56, CHAIN_ID, garbageMessage);
 
-        bytes32 messageId = bytes32(uint256(56));
+        uint256 messageId = 56;
         bytes32 expectedTxId = _txId(56, CHAIN_ID, garbageMessage);
 
         // Only check the indexed topics here (origin/message/tx id); the

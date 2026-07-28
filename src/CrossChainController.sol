@@ -211,7 +211,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
                 message: _message
             }).encode();
 
-        (bytes32 messageId, uint256 fee) = _dispatch(config, _destinationChainId, _gasLimit, encodedTx);
+        (uint256 messageId, uint256 fee) = _dispatch(config, _destinationChainId, _gasLimit, encodedTx);
 
         emit MessageForwarded(
             _destinationChainId,
@@ -236,7 +236,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     ///      responsible for having authenticated the remote sender.
     ///      CrossChainController is bridge agnostic, so _messageId is only used
     ///      for emit principles only and should not be fully trusted.
-    function receiveMessage(bytes32 _messageId, bytes memory _encodedTx, uint256 _originChainId)
+    function receiveMessage(uint256 _messageId, bytes memory _encodedTx, uint256 _originChainId)
         public
         virtual
         override
@@ -428,7 +428,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     )
         internal
         virtual
-        returns (bytes32 messageId, uint256 fee)
+        returns (uint256 messageId, uint256 fee)
     {
         bytes memory encodedCall = abi.encodeCall(
             IBaseAdapter.sendMessage, (_config.remoteAdapter, _destinationChainId, _gasLimit, _encodedTx)
@@ -449,7 +449,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
         // Make sure adapter returns the right length parameters.
         if (returndata.length < 64) revert Errors.MESSAGE_SEND_FAILED();
 
-        (messageId, fee) = abi.decode(returndata, (bytes32, uint256));
+        (messageId, fee) = abi.decode(returndata, (uint256, uint256));
     }
 
     /// @notice Helper function used by `updateExecutor`.

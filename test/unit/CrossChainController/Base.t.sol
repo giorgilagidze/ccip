@@ -248,7 +248,7 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         // off the packed value rather than comparing the whole word.
         bytes memory encodedTx = _encodedEmptyTx(1, CHAIN_ID);
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), encodedTx, CHAIN_ID);
+        controller.receiveMessage(1, encodedTx, CHAIN_ID);
         bytes32 txId = TransactionLib.id(encodedTx);
         assertEq(
             uint256(vm.load(address(controller), keccak256(abi.encode(txId, TRANSACTION_STATE_SLOT)))) & 0xff,

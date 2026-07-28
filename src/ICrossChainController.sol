@@ -16,7 +16,7 @@ interface ICrossChainControllerEvents {
     /// @notice Emitted when a message was handed to the local adapter.
     event MessageForwarded(
         uint256 indexed destinationChainId,
-        bytes32 indexed messageId,
+        uint256 indexed messageId,
         bytes32 indexed txId,
         bytes transaction,
         address localAdapter,
@@ -27,12 +27,12 @@ interface ICrossChainControllerEvents {
 
     /// @notice Emitted when an inbound message executed successfully.
     event MessageReceived(
-        uint256 indexed originChainId, bytes32 indexed messageId, bytes32 indexed txId, bytes transaction
+        uint256 indexed originChainId, uint256 indexed messageId, bytes32 indexed txId, bytes transaction
     );
 
     /// @notice Emitted when an inbound message reverted and was stored.
     event MessageExecutionFailed(
-        uint256 indexed originChainId, bytes32 indexed messageId, bytes32 indexed txId, bytes transaction, bytes reason
+        uint256 indexed originChainId, uint256 indexed messageId, bytes32 indexed txId, bytes transaction, bytes reason
     );
 
     /// @notice Emitted when a stored failed message was successfully retried.
@@ -76,7 +76,7 @@ interface ICrossChainController is ICrossChainControllerEvents {
     /// @param _encodedTx The encoded transaction object (that contains the message itself).
     /// @param _originChainId The origin chain id from which cross-chain message originated.
     /// @return txId The deterministic transaction id used for the DAO execution.
-    function receiveMessage(bytes32 _messageId, bytes memory _encodedTx, uint256 _originChainId)
+    function receiveMessage(uint256 _messageId, bytes memory _encodedTx, uint256 _originChainId)
         external
         returns (bytes32 txId);
 

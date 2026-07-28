@@ -94,7 +94,7 @@ contract AdapterMock is IBaseAdapter {
         external
         payable
         override
-        returns (bytes32 messageId, uint256 fee)
+        returns (uint256 messageId, uint256 fee)
     {
         if (address(this) != CONTROLLER) {
             revert Errors.SEND_PATH_NOT_DELEGATECALLED(address(this));
@@ -130,6 +130,6 @@ contract AdapterMock is IBaseAdapter {
 
         emit SendMessageCalled(address(this), _receiver, _destinationChainId, _gasLimit, _message, msg.value);
 
-        messageId = MESSAGE_ID;
+        messageId = uint256(MESSAGE_ID);
     }
 }

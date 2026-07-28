@@ -129,7 +129,9 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
         // via the `MessageForwarded` event. Pin messageId (topic 2), ignore the
         // txId topic and the non-indexed data.
         vm.expectEmit(true, true, false, false, address(controller));
-        emit MessageForwarded(CHAIN_ETH_MAINNET, router.nextMessageId(), bytes32(0), "", address(0), address(0), 0, 0);
+        emit MessageForwarded(
+            CHAIN_ETH_MAINNET, uint256(router.nextMessageId()), bytes32(0), "", address(0), address(0), 0, 0
+        );
 
         controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "hello");
 
@@ -210,7 +212,9 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
         // via the `MessageForwarded` event. Pin messageId (topic 2), ignore the
         // txId topic and the non-indexed data.
         vm.expectEmit(true, true, false, false, address(controller));
-        emit MessageForwarded(CHAIN_ETH_MAINNET, expectedMessageId, bytes32(0), "", address(0), address(0), 0, 0);
+        emit MessageForwarded(
+            CHAIN_ETH_MAINNET, uint256(expectedMessageId), bytes32(0), "", address(0), address(0), 0, 0
+        );
 
         controller.forwardMessage(CHAIN_ETH_MAINNET, gasLimit, payload);
 

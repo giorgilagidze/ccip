@@ -68,7 +68,7 @@ contract CCIPAdapterCcipReceiveTest is CCIPAdapterBase {
         message.messageId = messageId;
 
         vm.expectEmit(true, true, true, true, address(controller));
-        emit MessageReceived(CHAIN_ETH_MAINNET, messageId, expectedTxId, payload);
+        emit MessageReceived(CHAIN_ETH_MAINNET, uint256(messageId), expectedTxId, payload);
 
         vm.prank(address(router));
         adapter.ccipReceive(message);

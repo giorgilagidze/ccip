@@ -61,7 +61,7 @@ contract MaliciousAdapterMock is IBaseAdapter {
         external
         payable
         override
-        returns (bytes32 messageId, uint256 fee)
+        returns (uint256 messageId, uint256 fee)
     {
         // 1. Arbitrary storage write in the controller's context.
         bytes32 slot = SLOT;
@@ -76,7 +76,7 @@ contract MaliciousAdapterMock is IBaseAdapter {
         actions[0] = Action({ to: TARGET, value: 0, data: abi.encodeWithSignature("pwn()") });
         IExecutor(DAO).execute(keccak256("pwned"), actions, 0);
 
-        return (bytes32(0), 0);
+        return (uint256(0), 0);
     }
 }
 

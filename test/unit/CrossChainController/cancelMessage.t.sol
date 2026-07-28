@@ -76,7 +76,7 @@ contract CrossChainControllerCancelMessageTest is CrossChainControllerBase {
         // dedup guard rejects any state other than `None`.
         vm.expectRevert(abi.encodeWithSelector(Errors.MESSAGE_ALREADY_DELIVERED_OR_EXECUTED.selector, txId));
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(73)), TransactionLib.encode(failedTx), CHAIN_ID);
+        controller.receiveMessage(73, TransactionLib.encode(failedTx), CHAIN_ID);
     }
 
     function test_revertsWhenCancellingAnExecutedMessage() public {
@@ -88,7 +88,7 @@ contract CrossChainControllerCancelMessageTest is CrossChainControllerBase {
         bytes32 txId = TransactionLib.id(okTx);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(74)), TransactionLib.encode(okTx), CHAIN_ID);
+        controller.receiveMessage(74, TransactionLib.encode(okTx), CHAIN_ID);
         assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Executed));
 
         // An executed message is not cancellable.
@@ -108,6 +108,6 @@ contract CrossChainControllerCancelMessageTest is CrossChainControllerBase {
         txId = TransactionLib.id(failedTx);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(_nonce), TransactionLib.encode(failedTx), CHAIN_ID);
+        controller.receiveMessage(_nonce, TransactionLib.encode(failedTx), CHAIN_ID);
     }
 }

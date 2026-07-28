@@ -76,7 +76,7 @@ contract CrossChainControllerNonCanonicalTxIdTest is CrossChainControllerBase {
         bytes memory weird = _nonCanonical(t);
 
         vm.prank(address(adapterA));
-        bytes32 returnedId = controller.receiveMessage(bytes32(uint256(1)), weird, CHAIN_ID);
+        bytes32 returnedId = controller.receiveMessage(1, weird, CHAIN_ID);
 
         // Stored under the CANONICAL id, not the hash of the delivered bytes.
         assertEq(returnedId, TransactionLib.id(t));
@@ -97,7 +97,7 @@ contract CrossChainControllerNonCanonicalTxIdTest is CrossChainControllerBase {
         bytes32 canonicalId = TransactionLib.id(t);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), weird, CHAIN_ID);
+        controller.receiveMessage(1, weird, CHAIN_ID);
         assertEq(uint256(controller.getTransaction(canonicalId).state), uint256(TransactionState.Delivered));
 
         // Cancel with the NON-CANONICAL bytes (what the event carries).
@@ -117,7 +117,7 @@ contract CrossChainControllerNonCanonicalTxIdTest is CrossChainControllerBase {
         bytes32 canonicalId = TransactionLib.id(t);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), weird, CHAIN_ID);
+        controller.receiveMessage(1, weird, CHAIN_ID);
         assertEq(uint256(controller.getTransaction(canonicalId).state), uint256(TransactionState.Delivered));
 
         // Retry with the non-canonical bytes still fails to execute (payload is

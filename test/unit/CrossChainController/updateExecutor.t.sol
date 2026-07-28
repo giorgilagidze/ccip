@@ -131,7 +131,7 @@ contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
         bytes memory message = abi.encode(actions);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(1)), _encodedTx(1, CHAIN_ID, message), CHAIN_ID);
+        controller.receiveMessage(uint256(1), _encodedTx(1, CHAIN_ID, message), CHAIN_ID);
 
         // Ran through the new executor.
         assertEq(counter.count(), 1);

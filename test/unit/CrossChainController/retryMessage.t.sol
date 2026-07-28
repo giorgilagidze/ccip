@@ -45,7 +45,7 @@ contract CrossChainControllerRetryMessageTest is CrossChainControllerBase {
         bytes32 txId = TransactionLib.id(failedTx);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(uint256(61)), TransactionLib.encode(failedTx), CHAIN_ID);
+        controller.receiveMessage(61, TransactionLib.encode(failedTx), CHAIN_ID);
         assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Delivered));
 
         // Fix the failure condition.
@@ -72,7 +72,7 @@ contract CrossChainControllerRetryMessageTest is CrossChainControllerBase {
         txId = TransactionLib.id(failedTx);
 
         vm.prank(address(adapterA));
-        controller.receiveMessage(bytes32(_nonce), TransactionLib.encode(failedTx), CHAIN_ID);
+        controller.receiveMessage(_nonce, TransactionLib.encode(failedTx), CHAIN_ID);
     }
 }
 

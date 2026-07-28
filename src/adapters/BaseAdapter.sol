@@ -78,7 +78,7 @@ abstract contract BaseAdapter is IBaseAdapter {
     /// @param _messageId The bridge-level message identifier.
     /// @param _payload The encoded payload message.
     /// @param _originChainId The standard chain id the message came from.
-    function _forwardMessage(bytes32 _messageId, bytes memory _payload, uint256 _originChainId) internal {
+    function _forwardMessage(uint256 _messageId, bytes memory _payload, uint256 _originChainId) internal {
         // Extra defense to ensure that caller on controller will always be
         // Adapter and not the contract that called adapter with delegatecall.
         if (address(this) != _selfAddress) {
