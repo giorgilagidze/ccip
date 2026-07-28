@@ -43,7 +43,7 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
         plugin = IMPLEMENTATION.deployUUPSProxy(abi.encodeCall(CrossChainController.initialize, (IDAO(_dao), executor)));
 
         // Only the plugin may execute inbound payloads on this executor.
-        if (deployedExecutor) Executor(executor).transferOwnership(plugin);
+        if (deployedExecutor) Executor(payable(executor)).transferOwnership(plugin);
 
         preparedSetupData.permissions =
             _getPermissions(_dao, plugin, guardian, executor == _dao, PermissionLib.Operation.Grant);

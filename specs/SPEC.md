@@ -128,10 +128,22 @@ itself so it can read its own trusted-remote map.
 | Function | Access | What it does |
 |---|---|---|
 | `execute(callId, actions, allowFailureMap)` | `onlyOwner` | Runs the action batch. The OSx commons `Executor` is permissionless by design; this variant gates it behind `Ownable` so it can be deployed standalone with the controller as owner. All other behaviour - bounds check, failure map, reentrancy guard, `Executed` event - is unchanged. |
+| `receive()` | - | Accepts plain ETH transfers so the executor can be pre-funded for value-bearing actions (see below). The commons `Executor` has no payable path, so without this the contract could not be topped up at all. |
 
 > The controller always calls `execute` with an `allowFailureMap` of `0`, so every action
 > in an inbound payload must succeed or the whole batch is captured as `Delivered` for
 > retry.
+
+**Value-bearing actions.** The messaging layer moves instructions, never funds: only the
+encoded `Action[]` bytes cross the bridge, and the entire receive path - the adapter's
+bridge callback, `receiveMessage`, `executeActions`, `execute` - is non-payable. An
+action may still target a payable function with `value > 0`: `payable` only governs
+whether a call can *carry* `msg.value`, not whether a contract can *spend* what it
+already holds, so the executor pays `action.value` out of its own balance at execution
+time. This is why `receive()` exists - the executor is topped up in advance and the cross-chain action spends from that
+balance. Funding is a separate, prior operation; it is never part of the message. If the
+balance is short, the action fails, the zero `allowFailureMap` reverts the whole batch,
+and the message is captured as `Delivered` - fund the executor and `retryMessage`.
 
 ### Deployment
 
