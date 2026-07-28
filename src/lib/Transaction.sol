@@ -31,6 +31,18 @@ enum TransactionState {
     Cancelled
 }
 
+/// @notice What the controller retains about a message it has seen.
+/// @dev Both fields share one storage slot, so recording the delivery time
+///      costs no extra `SSTORE` on the receive path.
+/// @param state The delivery/execution state of the message.
+/// @param bridgedAt The `block.timestamp` at which the message was delivered.
+///        `0` for a txId that was never delivered. Compared against the origin
+///        chain's retry cutoff to decide whether a retry is still allowed.
+struct TransactionRecord {
+    TransactionState state;
+    uint120 bridgedAt;
+}
+
 library TransactionLib {
     using TransactionLib for Transaction;
 
@@ -43,10 +55,12 @@ library TransactionLib {
     }
 
     function id(Transaction memory _transaction) internal pure returns (bytes32) {
+        // forge-lint: disable-next-line(asm-keccak256)
         return keccak256(abi.encode(_transaction));
     }
 
     function id(bytes memory _transaction) internal pure returns (bytes32) {
+        // forge-lint: disable-next-line(asm-keccak256)
         return keccak256(_transaction);
     }
 }

@@ -48,7 +48,8 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
 
     /// @param _crosschainController The owning controller.
     /// @param _ccipRouter The CCIP router on this chain.
-    /// @param _feeToken The fee token, or `address(0)` for native. IMMUTABLE.
+    /// @param _feeToken The fee token, or `address(0)` for native. IMMUTABLE, so
+    ///        a non-native token must be a deployed contract.
     /// @param _trustedRemoteConfigs The remote trusted config.
     constructor(
         address _crosschainController,
@@ -59,6 +60,12 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         BaseAdapter(_crosschainController, _trustedRemoteConfigs)
     {
         if (_ccipRouter == address(0)) revert Errors.ZERO_ADDRESS();
+
+        // `address(0)` is the native currency and is always valid.
+        // / Anything else must be a contract:
+        if (_feeToken != address(0) && _feeToken.code.length == 0) {
+            revert Errors.HAS_NO_CODE(_feeToken);
+        }
 
         CCIP_ROUTER = IRouterClient(_ccipRouter);
         FEE_TOKEN = _feeToken;
@@ -72,7 +79,7 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         override
         returns (address, uint256)
     {
-        if (_receiver == address(0)) revert Errors.RECEIVER_ADDRESS_ZERO();
+        if (_receiver == address(0)) revert Errors.ZERO_ADDRESS();
 
         // Reverts if not set.
         uint64 nativeChainId = SafeCast.toUint64(toNativeChainId(_destinationChainId));
@@ -89,10 +96,15 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
         onlyDelegatecallFromController
         returns (bytes32 messageId, uint256 fee)
     {
-        if (_receiver == address(0)) revert Errors.RECEIVER_ADDRESS_ZERO();
+        if (_receiver == address(0)) revert Errors.ZERO_ADDRESS();
 
         // Reverts if not set.
         uint64 nativeChainId = SafeCast.toUint64(toNativeChainId(_destinationChainId));
+
+        // A locally configured lane is not proof the bridge still serves it:
+        if (!CCIP_ROUTER.isChainSupported(nativeChainId)) {
+            revert Errors.DESTINATION_CHAIN_ID_NOT_SUPPORTED(nativeChainId);
+        }
 
         Client.EVM2AnyMessage memory ccipMessage = _buildMessage(_receiver, _gasLimit, _message, FEE_TOKEN);
 
@@ -108,8 +120,8 @@ contract CCIPAdapter is IERC165, IAny2EVMMessageReceiver, BaseAdapter {
 
             messageId = CCIP_ROUTER.ccipSend{ value: fee }(nativeChainId, ccipMessage);
         } else {
-            // Native value would be stranded in the controller's balance while
-            // an ERC20 fee is due; surface the mistake instead.
+            // If called with delegate call, msg.value check is not needed, but still
+            // exists, so other consumers(not our controller) can decide to use it or not.
             if (msg.value != 0) revert Errors.UNEXPECTED_NATIVE_VALUE();
 
             uint256 balance = IERC20(FEE_TOKEN).balanceOf(address(this));

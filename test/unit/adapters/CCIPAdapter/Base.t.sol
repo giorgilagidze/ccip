@@ -123,7 +123,8 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     }
 
     /// @dev Registers `localAdapter`/`remoteAdapterAddr` as the controller's
-    ///      lane for `chainId`. Grants `UPDATE_CONFIG_PERMISSION` in the process.
+    ///      lane for `chainId`. Grants `MANAGE_CONTROLLER_CONFIG_PERMISSION` in
+    ///      the process.
     function _registerLane(uint256 chainId, address localAdapter, address remoteAdapterAddr) internal {
         _grantAllPermissions();
         uint256[] memory ids = new uint256[](1);

@@ -46,7 +46,7 @@ contract CrossChainControllerRetryMessageTest is CrossChainControllerBase {
 
         vm.prank(address(adapterA));
         controller.receiveMessage(bytes32(uint256(61)), TransactionLib.encode(failedTx), CHAIN_ID);
-        assertEq(uint256(controller.getTransactionState(txId)), uint256(TransactionState.Delivered));
+        assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Delivered));
 
         // Fix the failure condition.
         flaky.setShouldRevert(false);
@@ -57,7 +57,7 @@ contract CrossChainControllerRetryMessageTest is CrossChainControllerBase {
         vm.prank(alice);
         controller.retryMessage(TransactionLib.encode(failedTx));
 
-        assertEq(uint256(controller.getTransactionState(txId)), uint256(TransactionState.Executed));
+        assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Executed));
         assertTrue(flaky.wasCalled());
     }
 

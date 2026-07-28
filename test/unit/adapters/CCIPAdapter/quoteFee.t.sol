@@ -7,7 +7,7 @@ import { Errors } from "@src/lib/Errors.sol";
 
 contract CCIPAdapterQuoteFeeTest is CCIPAdapterBase {
     function test_revertsIfReceiverIsZero() public {
-        vm.expectRevert(Errors.RECEIVER_ADDRESS_ZERO.selector);
+        vm.expectRevert(Errors.ZERO_ADDRESS.selector);
         adapter.quoteFee(address(0), SEL_ETH_MAINNET, 200_000, "");
     }
 

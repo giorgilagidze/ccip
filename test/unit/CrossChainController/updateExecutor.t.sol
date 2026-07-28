@@ -19,14 +19,16 @@ contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
         assertEq(controller.executor(), address(daoMock));
     }
 
+    /// @dev `address(0)` has no code, so it is rejected by the same code-length
+    ///      check that guards any codeless executor.
     function test_initializeRevertsOnZeroExecutor() public {
-        vm.expectRevert(Errors.ZERO_ADDRESS.selector);
+        vm.expectRevert(abi.encodeWithSelector(Errors.HAS_NO_CODE.selector, address(0)));
         deployController(address(daoMock), address(0));
     }
 
     function test_initializeRevertsOnCodelessExecutor() public {
         address eoa = makeAddr("eoaExecutor");
-        vm.expectRevert(abi.encodeWithSelector(Errors.EXECUTOR_HAS_NO_CODE.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Errors.HAS_NO_CODE.selector, eoa));
         deployController(address(daoMock), eoa);
     }
 
@@ -40,8 +42,9 @@ contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
     // Validation.
     // -------------------------------------------------------------------------
 
+    /// @dev `address(0)` is codeless, so it reverts via the code-length check.
     function test_revertsOnZeroExecutor() public {
-        vm.expectRevert(Errors.ZERO_ADDRESS.selector);
+        vm.expectRevert(abi.encodeWithSelector(Errors.HAS_NO_CODE.selector, address(0)));
         vm.prank(alice);
         controller.updateExecutor(address(0));
     }
@@ -51,7 +54,7 @@ contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
     function test_revertsOnCodelessExecutor() public {
         address eoa = makeAddr("eoaExecutor");
 
-        vm.expectRevert(abi.encodeWithSelector(Errors.EXECUTOR_HAS_NO_CODE.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Errors.HAS_NO_CODE.selector, eoa));
         vm.prank(alice);
         controller.updateExecutor(eoa);
 
@@ -68,7 +71,7 @@ contract CrossChainControllerUpdateExecutorTest is CrossChainControllerBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                DaoUnauthorized.selector, address(daoMock), address(controller), bob, updateExecutorPermissionId
+                DaoUnauthorized.selector, address(daoMock), address(controller), bob, manageConfigPermissionId
             )
         );
         vm.prank(bob);

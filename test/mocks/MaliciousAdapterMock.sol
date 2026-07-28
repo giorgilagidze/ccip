@@ -11,7 +11,7 @@ import { IBaseAdapter } from "@src/adapters/IBaseAdapter.sol";
 ///         mechanism (security-review finding 7).
 /// @dev DO NOT USE IN PRODUCTION!
 ///
-///      Whoever holds `UPDATE_CONFIG_PERMISSION` on a `CrossChainController`
+///      Whoever holds `MANAGE_CONTROLLER_CONFIG_PERMISSION` on a `CrossChainController`
 ///      can point a lane at a contract like this one. The next
 ///      `forwardMessage` — triggered by anybody with
 ///      `FORWARD_MESSAGE_PERMISSION`, for any legitimate reason — then runs

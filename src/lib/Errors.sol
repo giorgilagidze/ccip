@@ -7,6 +7,8 @@ library Errors {
     // Generic / configuration
     // ---------------------------------------------------------------------
 
+    /// @notice Thrown when two array arguments meant to be read in lockstep
+    ///         have different lengths.
     error INVALID_LENGTH_MISMATCH();
 
     /// @notice Thrown when a chain id of `0` is used. `0` is reserved as the
@@ -24,38 +26,25 @@ library Errors {
     ///         selector `0`).
     error ADAPTER_NOT_CONFIGURED(uint256 chainId);
 
-    /// @notice Thrown when the configured local adapter has no deployed code.
-    ///         Guards against the EVM reporting success for calls to codeless
-    ///         addresses.
-    error ADAPTER_HAS_NO_CODE(address adapter);
+    /// @notice Thrown when an address that must be a contract
+    ///         has no deployed code.
+    error HAS_NO_CODE(address account);
 
-    /// @notice Thrown when the executor being set has no deployed code.
-    error EXECUTOR_HAS_NO_CODE(address executor);
-
+    /// @notice Thrown when `address(0)` is passed where a
+    ///         real address is required.
     error ZERO_ADDRESS();
-
-    /// @notice Thrown when an upgrade is attempted after `freezeUpgrade` has
-    ///         been called. The freeze is permanent: no permission, not even the
-    ///         DAO's, can lift it.
-    error UPGRADE_FROZEN();
-
-    /// @notice Thrown when `freezeUpgrade` is called on an already-frozen
-    ///         controller.
-    error UPGRADE_ALREADY_FROZEN();
 
     // ---------------------------------------------------------------------
     // Authorization
     // ---------------------------------------------------------------------
 
+    /// @notice Thrown when `ccipReceive` is called by anything other than the
+    ///         configured CCIP router.
     error CALLER_NOT_CCIP_ROUTER();
 
     /// @notice Thrown when `receiveMessage` is called by anything other than a
     ///         local adapter registered through `updateConfig`.
     error CALLER_NOT_LOCAL_ADAPTER(address caller);
-
-    /// @notice Thrown when an adapter entry point is called by anything other
-    ///         than the `CrossChainController` that owns the adapter.
-    error CALLER_NOT_CROSS_CHAIN_CONTROLLER(address caller);
 
     /// @notice Thrown when the send path is executed outside a `delegatecall`
     ///         from the owning `CrossChainController`, i.e. when
@@ -68,37 +57,19 @@ library Errors {
     /// @notice Thrown when a RECEIVE-path function — which legitimately reads
     ///         the adapter's own storage — is reached in a foreign execution
     ///         context, i.e. `address(this) != _selfAddress`.
-    /// @dev Mirror of `SEND_PATH_NOT_DELEGATECALLED`. The whole Option-1
-    ///      design rests on send and receive running in DIFFERENT contexts;
-    ///      this hard-blocks any future path that lets send-path context reach
-    ///      storage-reading receive code, which is precisely the class of bug
-    ///      the `delegatecall` mechanism could otherwise reintroduce.
     error DELEGATE_CALL_FORBIDDEN(address context, address self);
 
-    /// @notice Thrown when the internal self-call entry point is called
-    ///         externally.
+    /// @notice Thrown when the internal self-call entry point
+    ///         is called externally.
     error CALLER_NOT_SELF(address caller);
 
     // ---------------------------------------------------------------------
     // Trusted remotes
     // ---------------------------------------------------------------------
 
-    error TRUSTED_REMOTE_NOT_SET();
+    /// @notice Thrown when an inbound message's sender is not the trusted
+    ///         remote registered for its origin chain.
     error REMOTE_NOT_TRUSTED();
-    error RECEIVER_ADDRESS_ZERO();
-
-    /// @notice Thrown by the deployment-time consistency helper when the
-    ///         adapter's trusted remote does not match the expected remote
-    ///         CONTROLLER address for that chain.
-    error TRUSTED_REMOTE_MISMATCH(uint256 chainId, address trustedRemote, address expectedRemoteController);
-
-    /// @notice Thrown by the deployment-time consistency helper when the
-    ///         adapter's trusted remote equals the controller's configured
-    ///         `remoteAdapter` for the same chain. Under `delegatecall` the
-    ///         bridge sees the remote CONTROLLER as the sender, so trusting the
-    ///         remote ADAPTER is the canonical misconfiguration: every inbound
-    ///         message would be rejected.
-    error TRUSTED_REMOTE_IS_REMOTE_ADAPTER(uint256 chainId, address remote);
 
     // ---------------------------------------------------------------------
     // Chain id mapping
@@ -110,22 +81,16 @@ library Errors {
     /// @notice Thrown when a bridge-native chain id has no standard counterpart.
     error UNKNOWN_NATIVE_CHAIN_ID(uint256 nativeChainId);
 
-    /// @notice Thrown when the controller's send-side `bridgeChainId` for a
-    ///         chain disagrees with the adapter's receive-side chain-id map.
-    ///         The two live in different contracts by design (send config must
-    ///         be storage-free) and must be kept in sync.
-    error CHAIN_ID_DESYNC(uint256 chainId, uint64 controllerBridgeChainId, uint64 adapterBridgeChainId);
+    /// @notice Thrown when the bridge itself does not support the destination
+    ///         chain, even though the lane is configured locally.
+    error DESTINATION_CHAIN_ID_NOT_SUPPORTED(uint256 nativeChainId);
 
     // ---------------------------------------------------------------------
     // Fees
     // ---------------------------------------------------------------------
 
     /// @notice Thrown when the pre-funded fee balance is below the quoted fee.
-    /// @dev Distinct on purpose: ops alerts on exactly this to know when the
-    ///      fee-paying contract must be topped up.
     error INSUFFICIENT_FEE_BALANCE(address feeToken, uint256 required, uint256 available);
-
-    error NOT_ENOUGH_TO_PAY_BRIDGE();
 
     /// @notice Thrown when the `delegatecall` into the local adapter's send
     ///         path failed without returning a reason to bubble.
@@ -141,9 +106,6 @@ library Errors {
     // Defensive receive / retry
     // ---------------------------------------------------------------------
 
-    /// @notice Thrown when retrying a call id that has no stored failed message.
-    error NO_FAILED_MESSAGE(bytes32 txId);
-
     /// @notice Thrown when an inbound message reuses a call id that is already
     ///         stored as delivered or executed.
     error MESSAGE_ALREADY_DELIVERED_OR_EXECUTED(bytes32 txId);
@@ -155,4 +117,13 @@ library Errors {
     /// @notice Thrown when message delivered to the actual chain doesn't match
     ///         the chain sender intended to send.
     error INCORRECT_CHAIN_MISMATCH();
+
+    /// @notice Thrown by `retryMessage` when the message arrived at or before
+    ///         its origin chain's retry cutoff, i.e. it belongs to a backlog
+    ///         that has since been blocked.
+    error MESSAGE_PREDATES_RETRY_CUTOFF(bytes32 txId, uint120 bridgedAt, uint120 cutoff);
+
+    /// @notice Thrown when a retry cutoff is not strictly greater than the
+    ///         current one, or is set in the future.
+    error RETRY_CUTOFF_INVALID(uint256 originChainId, uint120 currentCutoff, uint120 newCutoff);
 }

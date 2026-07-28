@@ -60,12 +60,12 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
     address internal bob; // holds none
 
     bytes32 internal forwardMessagePermissionId;
-    bytes32 internal updateConfigPermissionId;
+    bytes32 internal manageConfigPermissionId;
     bytes32 internal retryMessagePermissionId;
     bytes32 internal cancelMessagePermissionId;
     bytes32 internal sweepPermissionId;
     bytes32 internal pausePermissionId;
-    bytes32 internal updateExecutorPermissionId;
+    bytes32 internal unpausePermissionId;
 
     function setUp() public virtual {
         daoMock = new CrossChainControllerDAOMock();
@@ -91,20 +91,20 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         adapterB = new AdapterMock(address(controller), address(0), 0, bytes32(uint256(2)), feeSinkB, false, false);
 
         forwardMessagePermissionId = Permissions.FORWARD_MESSAGE_PERMISSION_ID;
-        updateConfigPermissionId = Permissions.UPDATE_CONFIG_PERMISSION_ID;
+        manageConfigPermissionId = Permissions.MANAGE_CONTROLLER_CONFIG_PERMISSION_ID;
         retryMessagePermissionId = Permissions.RETRY_MESSAGE_PERMISSION_ID;
         cancelMessagePermissionId = Permissions.CANCEL_MESSAGE_PERMISSION_ID;
         sweepPermissionId = Permissions.SWEEP_PERMISSION_ID;
         pausePermissionId = Permissions.PAUSE_PERMISSION_ID;
-        updateExecutorPermissionId = Permissions.UPDATE_EXECUTOR_PERMISSION_ID;
+        unpausePermissionId = Permissions.UNPAUSE_PERMISSION_ID;
 
         daoMock.setHasPermission(address(controller), alice, forwardMessagePermissionId, true);
-        daoMock.setHasPermission(address(controller), alice, updateConfigPermissionId, true);
+        daoMock.setHasPermission(address(controller), alice, manageConfigPermissionId, true);
         daoMock.setHasPermission(address(controller), alice, retryMessagePermissionId, true);
         daoMock.setHasPermission(address(controller), alice, cancelMessagePermissionId, true);
         daoMock.setHasPermission(address(controller), alice, sweepPermissionId, true);
         daoMock.setHasPermission(address(controller), alice, pausePermissionId, true);
-        daoMock.setHasPermission(address(controller), alice, updateExecutorPermissionId, true);
+        daoMock.setHasPermission(address(controller), alice, unpausePermissionId, true);
     }
 
     /// @notice Deploys a controller proxy.
@@ -196,14 +196,16 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
     // value makes the collision tests read an untouched gap word and pass
     // vacuously.
     //
-    // slot 351 = `_currentTxNonce`, 352 = `_transactionState`,
-    // 353 = `chainToAdapter`, 354 = `executor` (packed).
+    // slot 351 = `_currentTxNonce`, 352 = `_transactions`,
+    // 353 = `_retryCutoffs`, 354 = `chainToAdapter`,
+    // 355 = `executor` (packed).
     // -------------------------------------------------------------------------
 
     uint256 internal constant NONCE_SLOT = 351;
     uint256 internal constant TRANSACTION_STATE_SLOT = 352;
-    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 353;
-    uint256 internal constant EXECUTOR_SLOT = 354;
+    uint256 internal constant RETRY_CUTOFFS_SLOT = 353;
+    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 354;
+    uint256 internal constant EXECUTOR_SLOT = 355;
 
     /// @dev `chainToAdapter[_chainId]` occupies TWO words: word 0 holds
     ///      `localAdapter`; word 1 holds `remoteAdapter`. This returns word 0's
@@ -241,14 +243,16 @@ abstract contract CrossChainControllerBase is Test, ICrossChainControllerEvents 
         controller.forwardMessage(CHAIN_ID, GAS_LIMIT, _emptyActionsPayload());
         assertEq(uint256(vm.load(address(controller), bytes32(NONCE_SLOT))), nonceBefore + 1, "NONCE_SLOT stale");
 
-        // `_transactionState[txId]` -- set to `Executed` by the delivery above.
+        // `_transactions[txId]` -- set to `Executed` by the delivery above.
+        // `state` and `bridgedAt` share the word: `state` is byte 0, so mask it
+        // off the packed value rather than comparing the whole word.
         bytes memory encodedTx = _encodedEmptyTx(1, CHAIN_ID);
         vm.prank(address(adapterA));
         controller.receiveMessage(bytes32(uint256(1)), encodedTx, CHAIN_ID);
         bytes32 txId = TransactionLib.id(encodedTx);
         assertEq(
-            uint256(vm.load(address(controller), keccak256(abi.encode(txId, TRANSACTION_STATE_SLOT)))),
-            uint256(controller.getTransactionState(txId)),
+            uint256(vm.load(address(controller), keccak256(abi.encode(txId, TRANSACTION_STATE_SLOT)))) & 0xff,
+            uint256(controller.getTransaction(txId).state),
             "TRANSACTION_STATE_SLOT stale"
         );
     }

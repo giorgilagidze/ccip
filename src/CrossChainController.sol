@@ -4,6 +4,7 @@ pragma solidity ^0.8.8;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import { PluginUUPSUpgradeable } from "@aragon/osx-commons-contracts/src/plugin/PluginUUPSUpgradeable.sol";
@@ -16,7 +17,7 @@ import { ICrossChainController } from "./ICrossChainController.sol";
 import { Errors } from "./lib/Errors.sol";
 import { Permissions } from "./lib/Permissions.sol";
 
-import { TransactionLib, Transaction, TransactionState } from "./lib/Transaction.sol";
+import { TransactionLib, Transaction, TransactionRecord, TransactionState } from "./lib/Transaction.sol";
 
 /// @title CrossChainController
 /// @notice The entry point for sending and receiving a message cross chain.
@@ -29,10 +30,22 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     // every message originator sends we put into an transaction and attach a nonce. It increments by one
     uint256 internal _currentTxNonce;
 
-    /// @notice txId -> stored message.
-    mapping(bytes32 => TransactionState) private _transactionState;
+    /// @notice txId -> stored message: its state and when it was delivered.
+    mapping(bytes32 => TransactionRecord) private _transactions;
 
-    /// @notice standard chain id -> lane configuration.
+    /// @notice standard origin chain id -> the delivery timestamp at or before
+    ///         which that chain's pending messages can no longer be retried.
+    /// @dev A delivered-but-failed message can only be retried if it arrived
+    ///      strictly after its origin chain's cutoff (`bridgedAt > cutoff`). Raising the cutoff blocks that
+    ///      chain's whole pending backlog in one call, instead of cancelling
+    ///      each message individually.
+    ///
+    ///      Only affects the backlog. Messages still in flight are stopped by
+    ///      pausing or by repointing the chain's local adapter, both of which
+    ///      reject the delivery before it is ever recorded.
+    mapping(uint256 => uint120) internal _retryCutoffs;
+
+    /// @notice standard chain id -> adapter configuration.
     mapping(uint256 => ChainConfig) public chainToAdapter;
 
     /// @notice The executor that inbound payloads are executed on.
@@ -63,20 +76,27 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     /// @notice Accepts native pre-funding used to pay bridge fees.
     receive() external payable { }
 
-    /// @notice Checks if an interface is supported by this or its parent contract.
-    /// @param _interfaceId The ID of the interface.
-    /// @return Returns `true` if the interface is supported.
-    function supportsInterface(bytes4 _interfaceId) public view virtual override returns (bool) {
-        return _interfaceId == type(ICrossChainController).interfaceId || super.supportsInterface(_interfaceId);
+    // -------------------------------------------------------------------------
+    // ====================== Configuration ======================
+    // -------------------------------------------------------------------------
+
+    /// @notice Freezes the message paths (forward / receive / retry).
+    function pause() external virtual auth(Permissions.PAUSE_PERMISSION_ID) {
+        _pause();
     }
 
-    // -------------------------------------------------------------------------
-    // Configuration
-    // -------------------------------------------------------------------------
+    /// @notice Resumes the message paths.
+    /// @dev Gated by its own permission (not `PAUSE_PERMISSION`) so a guardian
+    ///      trusted only to freeze cannot reopen the paths mid-incident.
+    function unpause() external virtual auth(Permissions.UNPAUSE_PERMISSION_ID) {
+        _unpause();
+    }
 
     /// @notice Allows to update configuration per chain.
     /// @dev Pass an all-zero `ChainConfig` to clear/remove
-    ///      or a fully set one to configure it.
+    ///      or a fully set one to configure it. `localAdapter` must be a
+    ///      deployed contract; `remoteAdapter` lives on another chain and
+    ///      cannot be validated here.
     /// @param _chainIds The standard chain ids to configure. These are the
     ///        REMOTE (destination/origin) chain ids. Note that it allows
     ///        to set config for this chain, allowing crosschain messages
@@ -85,7 +105,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     function updateConfig(uint256[] memory _chainIds, ChainConfig[] memory _configs)
         public
         virtual
-        auth(Permissions.UPDATE_CONFIG_PERMISSION_ID)
+        auth(Permissions.MANAGE_CONTROLLER_CONFIG_PERMISSION_ID)
     {
         if (_chainIds.length != _configs.length) {
             revert Errors.INVALID_LENGTH_MISMATCH();
@@ -104,55 +124,68 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
                 revert Errors.INCOMPLETE_ADAPTER_CONFIG(chainId);
             }
 
+            // `remoteAdapter` lives on another chain and cannot be checked here.
+            if (hasLocal && newConfig.localAdapter.code.length == 0) {
+                revert Errors.HAS_NO_CODE(newConfig.localAdapter);
+            }
+
             chainToAdapter[chainId] = newConfig;
 
             emit ConfigUpdated(chainId, newConfig.localAdapter, newConfig.remoteAdapter);
         }
     }
 
+    /// @notice Blocks every message from a chain that arrived at or before
+    ///         `_cutoff` from being retried.
+    /// @dev Does in one call what `cancelMessage` does one message at a time.
+    /// @param _originChainId The standard chain id whose delivered messages are
+    ///        blocked.
+    /// @param _cutoff The delivery timestamp at or before which messages from
+    ///        `_originChainId` can no longer be retried.
+    function updateRetryCutoff(uint256 _originChainId, uint120 _cutoff)
+        public
+        virtual
+        auth(Permissions.MANAGE_CONTROLLER_CONFIG_PERMISSION_ID)
+    {
+        if (_originChainId == 0) revert Errors.INVALID_CHAIN_ID();
+
+        uint120 currentCutoff = _retryCutoffs[_originChainId];
+        if (_cutoff <= currentCutoff || _cutoff > block.timestamp) {
+            revert Errors.RETRY_CUTOFF_INVALID(_originChainId, currentCutoff, _cutoff);
+        }
+
+        _retryCutoffs[_originChainId] = _cutoff;
+
+        emit RetryCutoffUpdated(_originChainId, currentCutoff, _cutoff);
+    }
+
     /// @notice Repoints this controller at a different executor.
     /// @dev The message is routed to this executor address for execution.
     /// @param _executor The new executor address.
-    function updateExecutor(address _executor) public virtual auth(Permissions.UPDATE_EXECUTOR_PERMISSION_ID) {
+    function updateExecutor(address _executor) public virtual auth(Permissions.MANAGE_CONTROLLER_CONFIG_PERMISSION_ID) {
         _setExecutor(_executor);
     }
 
-    /// @notice Whether an address is currently registered as a local adapter.
-    /// @param _adapter The address to check.
-    /// @param _chainId The chain id of remote chain.
-    function isRegisteredLocalAdapter(address _adapter, uint256 _chainId) public view returns (bool) {
-        return chainToAdapter[_chainId].localAdapter == _adapter;
-    }
+    /// @notice Moves pre-funded fee assets out of this contract.
+    /// @dev This contract is the fee payer: under `delegatecall` the bridge
+    ///      call is made by this account, so the fee (native `msg.value` or an
+    ///      ERC20 pulled by the router) comes straight from here. No funds are
+    ///      ever handed to the adapter and none can be stranded there.
+    /// @param _token The asset to move; `address(0)` for native currency.
+    /// @param _to The recipient (typically the DAO).
+    /// @param _amount The amount to move.
+    function sweep(address _token, address _to, uint256 _amount) public virtual auth(Permissions.SWEEP_PERMISSION_ID) {
+        if (_to == address(0)) revert Errors.ZERO_ADDRESS();
 
-    /// @notice Quotes the bridge fee for a send.
-    /// @param _destinationChainId The standard chain id of remote chain.
-    /// @param _gasLimit The gas limit that will be used for crosschain message execution.
-    /// @param _message The encoded Action[] message.
-    /// @return feeToken The fee token (`address(0)` for native).
-    /// @return fee The required fee amount.
-    /// @return available The balance this contract currently holds of `feeToken`.
-    function quoteFee(uint256 _destinationChainId, uint256 _gasLimit, bytes memory _message)
-        public
-        view
-        virtual
-        returns (address feeToken, uint256 fee, uint256 available)
-    {
-        ChainConfig memory config = _validatedConfig(_destinationChainId);
+        if (_token == address(0)) {
+            // solhint-disable-next-line avoid-low-level-calls
+            (bool ok,) = _to.call{ value: _amount }("");
+            if (!ok) revert Errors.NATIVE_TRANSFER_FAILED(_to, _amount);
+        } else {
+            IERC20(_token).safeTransfer(_to, _amount);
+        }
 
-        // Quote the SAME bytes `forwardMessage` will send.
-        bytes memory encodedTx = Transaction({
-                nonce: _currentTxNonce + 1,
-                origin: msg.sender,
-                controller: address(this),
-                originChainId: block.chainid,
-                destinationChainId: _destinationChainId,
-                message: _message
-            }).encode();
-
-        (feeToken, fee) =
-            IBaseAdapter(config.localAdapter).quoteFee(config.remoteAdapter, _destinationChainId, _gasLimit, encodedTx);
-
-        available = feeToken == address(0) ? address(this).balance : IERC20(feeToken).balanceOf(address(this));
+        emit Swept(_token, _to, _amount);
     }
 
     /// @inheritdoc ICrossChainController
@@ -220,22 +253,86 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
             revert Errors.INCORRECT_CHAIN_MISMATCH();
         }
 
+        TransactionRecord storage record = _transactions[txId];
+
         // Either message is already delivered or executed.
         // If delivered, but execution failed, call retry.
-        if (_transactionState[txId] != TransactionState.None) {
+        if (record.state != TransactionState.None) {
             revert Errors.MESSAGE_ALREADY_DELIVERED_OR_EXECUTED(txId);
         }
+
+        record.state = TransactionState.Executed;
+
+        // Stamped on both branches: this is when the message arrived, whether
+        // or not its actions executed. Shares a slot with `state`.
+        record.bridgedAt = SafeCast.toUint120(block.timestamp);
 
         // The self-call also contains payload decoding, so a malformed payload
         // is captured for retry rather than reverting the bridge delivery.
         try this.executeActions(txId, transaction.message) {
-            _transactionState[txId] = TransactionState.Executed;
             emit MessageReceived(_originChainId, _messageId, txId, _encodedTx);
         } catch (bytes memory reason) {
-            _transactionState[txId] = TransactionState.Delivered;
+            record.state = TransactionState.Delivered;
 
             emit MessageExecutionFailed(_originChainId, _messageId, txId, _encodedTx, reason);
         }
+    }
+
+    /// @inheritdoc ICrossChainController
+    /// @dev Reverts (bubbling the failure) if the retry fails again, so the
+    ///      stored message stays pending.
+    function retryMessage(bytes memory _encodedTx)
+        public
+        virtual
+        override
+        whenNotPaused
+        auth(Permissions.RETRY_MESSAGE_PERMISSION_ID)
+    {
+        // Normalize before hashing, exactly like `receiveMessage`: the record
+        // is keyed by the hash of the canonical re-encoding, so any decodable
+        // representation of the same transaction resolves to the same txId.
+        Transaction memory transaction = _encodedTx.decode();
+        bytes32 txId = transaction.id();
+        TransactionRecord storage record = _transactions[txId];
+
+        // Transaction must be delivered, but not executed in order to retry.
+        if (record.state != TransactionState.Delivered) {
+            revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(txId);
+        }
+
+        // `originChainId` is covered by `txId` (the hash commits to every
+        // field), so a retrier cannot name a different chain to dodge that
+        // chain's cutoff.
+        uint120 cutoff = _retryCutoffs[transaction.originChainId];
+        if (record.bridgedAt <= cutoff) {
+            revert Errors.MESSAGE_PREDATES_RETRY_CUTOFF(txId, record.bridgedAt, cutoff);
+        }
+
+        record.state = TransactionState.Executed;
+
+        this.executeActions(txId, transaction.message);
+
+        emit MessageRetried(txId);
+    }
+
+    /// @notice Cancels a delivered-but-failed message so it can never execute.
+    /// @dev Only a `Delivered` (failed, pending-retry) message can be cancelled.
+    ///      The `txId` stays occupied (state becomes `Cancelled`, not `None`),
+    ///      so the same message can never be re-delivered or retried afterwards.
+    /// @param _encodedTx The encoded tx that must be cancelled.
+    function cancelMessage(bytes memory _encodedTx) public virtual auth(Permissions.CANCEL_MESSAGE_PERMISSION_ID) {
+        // Normalized like `receiveMessage`/`retryMessage`, so the emergency
+        // path accepts any decodable representation of the stored message.
+        bytes32 txId = _encodedTx.decode().id();
+        TransactionRecord storage record = _transactions[txId];
+
+        if (record.state != TransactionState.Delivered) {
+            revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(txId);
+        }
+
+        record.state = TransactionState.Cancelled;
+
+        emit MessageCancelled(txId);
     }
 
     /// @notice Decodes and executes an authenticated payload on the DAO.
@@ -253,103 +350,72 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
         IExecutor(executor).execute(_txId, actions, 0);
     }
 
-    /// @inheritdoc ICrossChainController
-    /// @dev Reverts (bubbling the failure) if the retry fails again, so the
-    ///      stored message stays pending.
-    function retryMessage(bytes memory _encodedTx)
+    // -------------------------------------------------------------------------
+    // ====================== Public View Functions ======================
+    // -------------------------------------------------------------------------
+
+    /// @notice Quotes the bridge fee for a send.
+    /// @param _destinationChainId The standard chain id of remote chain.
+    /// @param _gasLimit The gas limit that will be used for crosschain message execution.
+    /// @param _message The encoded Action[] message.
+    /// @return feeToken The fee token (`address(0)` for native).
+    /// @return fee The required fee amount.
+    /// @return available The balance this contract currently holds of `feeToken`.
+    function quoteFee(uint256 _destinationChainId, uint256 _gasLimit, bytes memory _message)
         public
+        view
         virtual
-        override
-        whenNotPaused
-        auth(Permissions.RETRY_MESSAGE_PERMISSION_ID)
+        returns (address feeToken, uint256 fee, uint256 available)
     {
-        bytes32 txId = _encodedTx.id();
+        ChainConfig memory config = _validatedConfig(_destinationChainId);
 
-        if (_transactionState[txId] != TransactionState.Delivered) {
-            revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(txId);
-        }
+        // Quote the SAME bytes `forwardMessage` will send.
+        bytes memory encodedTx = Transaction({
+                nonce: _currentTxNonce + 1,
+                origin: msg.sender,
+                controller: address(this),
+                originChainId: block.chainid,
+                destinationChainId: _destinationChainId,
+                message: _message
+            }).encode();
 
-        _transactionState[txId] = TransactionState.Executed;
+        (feeToken, fee) =
+            IBaseAdapter(config.localAdapter).quoteFee(config.remoteAdapter, _destinationChainId, _gasLimit, encodedTx);
 
-        this.executeActions(txId, _encodedTx.decode().message);
-
-        emit MessageRetried(txId);
+        available = feeToken == address(0) ? address(this).balance : IERC20(feeToken).balanceOf(address(this));
     }
 
-    /// @notice Cancels a delivered-but-failed message so it can never execute.
-    /// @dev Only a `Delivered` (failed, pending-retry) message can be cancelled.
-    ///      The `txId` stays occupied (state becomes `Cancelled`, not `None`),
-    ///      so the same message can never be re-delivered or retried afterwards.
-    /// @param _encodedTx The encoded tx that must be cancelled.
-    function cancelMessage(bytes memory _encodedTx)
-        public
-        virtual
-        whenNotPaused
-        auth(Permissions.CANCEL_MESSAGE_PERMISSION_ID)
-    {
-        bytes32 txId = _encodedTx.id();
-
-        if (_transactionState[txId] != TransactionState.Delivered) {
-            revert Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS(txId);
-        }
-
-        _transactionState[txId] = TransactionState.Cancelled;
-
-        emit MessageCancelled(txId);
+    /// @notice Whether an address is currently registered as a local adapter.
+    /// @param _adapter The address to check.
+    /// @param _chainId The chain id of remote chain.
+    function isRegisteredLocalAdapter(address _adapter, uint256 _chainId) public view returns (bool) {
+        return chainToAdapter[_chainId].localAdapter == _adapter;
     }
 
-    /// @notice Returns a state of transaction.
+    /// @notice The delivery timestamp at or before which a chain's messages can
+    ///         no longer be retried.
+    /// @param _originChainId The standard chain id.
+    /// @return The cutoff, or `0` if none was ever set.
+    function retryCutoff(uint256 _originChainId) public view virtual returns (uint120) {
+        return _retryCutoffs[_originChainId];
+    }
+
+    /// @notice Returns everything stored about a transaction.
     /// @param _txId The tx id.
-    /// @return The state of the transaction(None, Delivered, Executed, Cancelled)
-    function getTransactionState(bytes32 _txId) public view virtual returns (TransactionState) {
-        return _transactionState[_txId];
+    /// @return The record; all-zero for a txId that was never delivered.
+    function getTransaction(bytes32 _txId) public view virtual returns (TransactionRecord memory) {
+        return _transactions[_txId];
     }
 
-    /// @notice Returns a state of transaction.
-    /// @param _tx The transaction.
-    /// @return The state of the transaction(None, Delivered, Executed, Cancelled)
-    function getTransactionState(Transaction memory _tx) public view virtual returns (TransactionState) {
-        return _transactionState[_tx.id()];
-    }
-
-    /// @notice Moves pre-funded fee assets out of this contract.
-    /// @dev This contract is the fee payer: under `delegatecall` the bridge
-    ///      call is made by this account, so the fee (native `msg.value` or an
-    ///      ERC20 pulled by the router) comes straight from here. No funds are
-    ///      ever handed to the adapter and none can be stranded there.
-    /// @param _token The asset to move; `address(0)` for native currency.
-    /// @param _to The recipient (typically the DAO).
-    /// @param _amount The amount to move.
-    function sweep(address _token, address _to, uint256 _amount) public virtual auth(Permissions.SWEEP_PERMISSION_ID) {
-        if (_to == address(0)) revert Errors.ZERO_ADDRESS();
-
-        if (_token == address(0)) {
-            // solhint-disable-next-line avoid-low-level-calls
-            (bool ok,) = _to.call{ value: _amount }("");
-            if (!ok) revert Errors.NATIVE_TRANSFER_FAILED(_to, _amount);
-        } else {
-            IERC20(_token).safeTransfer(_to, _amount);
-        }
-
-        emit Swept(_token, _to, _amount);
-    }
-
-    /// @notice Freezes the message paths (forward / receive / retry / cancel).
-    /// @dev Intended for a bridge-independent guardian to halt inbound execution
-    ///      during an incident (e.g. a compromised bridge). Admin paths such as
-    ///      `updateConfig` and `sweep` remain callable so recovery is possible
-    ///      while paused.
-    function pause() external virtual auth(Permissions.PAUSE_PERMISSION_ID) {
-        _pause();
-    }
-
-    /// @notice Resumes the message paths.
-    function unpause() external virtual auth(Permissions.PAUSE_PERMISSION_ID) {
-        _unpause();
+    /// @notice Checks if an interface is supported by this or its parent contract.
+    /// @param _interfaceId The ID of the interface.
+    /// @return Returns `true` if the interface is supported.
+    function supportsInterface(bytes4 _interfaceId) public view virtual override returns (bool) {
+        return _interfaceId == type(ICrossChainController).interfaceId || super.supportsInterface(_interfaceId);
     }
 
     // -------------------------------------------------------------------------
-    // Internal
+    // ====================== Internal/Private Functions ======================
     // -------------------------------------------------------------------------
 
     /// @notice `delegatecall`s the local adapter's send path and
@@ -388,8 +454,7 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
 
     /// @notice Helper function used by `updateExecutor`.
     function _setExecutor(address _executor) internal {
-        if (_executor == address(0)) revert Errors.ZERO_ADDRESS();
-        if (_executor.code.length == 0) revert Errors.EXECUTOR_HAS_NO_CODE(_executor);
+        if (_executor.code.length == 0) revert Errors.HAS_NO_CODE(_executor);
 
         emit ExecutorUpdated(executor, _executor);
 
@@ -397,9 +462,6 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
     }
 
     /// @notice Loads and validates the lane configuration for a destination.
-    /// @dev Reverts instead of silently no-op'ing: a `delegatecall` to a
-    ///      codeless address reports success, which would let a proposal
-    ///      "execute" while nothing was ever bridged.
     function _validatedConfig(uint256 _destinationChainId) internal view virtual returns (ChainConfig memory config) {
         config = chainToAdapter[_destinationChainId];
 
@@ -410,5 +472,5 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
 
     /// @notice This empty reserved space is put in place to allow future versions to add
     ///         new variables without shifting down storage in the inheritance chain.
-    uint256[46] private __gap;
+    uint256[45] private __gap;
 }

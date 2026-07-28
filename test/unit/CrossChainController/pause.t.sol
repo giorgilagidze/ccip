@@ -3,7 +3,10 @@
 pragma solidity ^0.8.17;
 
 import { CrossChainControllerBase } from "./Base.t.sol";
+import { Transaction, TransactionState, TransactionLib } from "@src/lib/Transaction.sol";
+import { Action } from "@aragon/osx-commons-contracts/src/executors/IExecutor.sol";
 import { DaoUnauthorized } from "@aragon/osx-commons-contracts/src/permission/auth/auth.sol";
+import { ActionExecute } from "@osx-test/mocks/commons/executors/ActionExecute.sol";
 
 contract CrossChainControllerPauseTest is CrossChainControllerBase {
     /// @dev OZ `security/Pausable` reverts with this string.
@@ -59,10 +62,28 @@ contract CrossChainControllerPauseTest is CrossChainControllerBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                DaoUnauthorized.selector, address(daoMock), address(controller), bob, pausePermissionId
+                DaoUnauthorized.selector, address(daoMock), address(controller), bob, unpausePermissionId
             )
         );
         vm.prank(bob);
+        controller.unpause();
+    }
+
+    /// @dev The permissions are deliberately split: holding `PAUSE_PERMISSION`
+    ///      alone (the guardian setup) must not be enough to reopen the paths.
+    function test_unpauseRevertsIfCallerOnlyHoldsPausePermission() public {
+        address guardian = makeAddr("guardian");
+        daoMock.setHasPermission(address(controller), guardian, pausePermissionId, true);
+
+        vm.prank(guardian);
+        controller.pause();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DaoUnauthorized.selector, address(daoMock), address(controller), guardian, unpausePermissionId
+            )
+        );
+        vm.prank(guardian);
         controller.unpause();
     }
 
@@ -118,13 +139,28 @@ contract CrossChainControllerPauseTest is CrossChainControllerBase {
         controller.retryMessage(_encodedEmptyTx(1, CHAIN_ID));
     }
 
-    function test_cancelMessageRevertsWhenPaused() public {
+    /// @dev Cancelling is deliberately exempt from `whenNotPaused`: bad messages
+    ///      must stay neutralisable during an incident, which is exactly when
+    ///      the controller is paused.
+    function test_cancelMessageWorksWhenPaused() public {
+        _configureLane(CHAIN_ID, address(adapterA), remoteAdapterA);
+
+        // Deliver a message whose execution fails, leaving it `Delivered`.
+        Action[] memory actions = new Action[](1);
+        actions[0] = Action({ to: address(actionTarget), value: 0, data: abi.encodeCall(ActionExecute.fail, ()) });
+        Transaction memory failedTx = _tx(1, CHAIN_ID, abi.encode(actions));
+        bytes32 txId = TransactionLib.id(failedTx);
+
+        vm.prank(address(adapterA));
+        controller.receiveMessage(bytes32(uint256(1)), TransactionLib.encode(failedTx), CHAIN_ID);
+
         vm.prank(alice);
         controller.pause();
 
-        vm.expectRevert(PAUSED_REVERT);
         vm.prank(alice);
-        controller.cancelMessage(_encodedEmptyTx(1, CHAIN_ID));
+        controller.cancelMessage(TransactionLib.encode(failedTx));
+
+        assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Cancelled));
     }
 
     // -------------------------------------------------------------------------

@@ -37,7 +37,7 @@ contract CrossChainControllerCancelMessageTest is CrossChainControllerBase {
         _configureLane(CHAIN_ID, address(adapterA), remoteAdapterA);
         (Transaction memory failedTx, bytes32 txId) = _causeFailure(71);
 
-        assertEq(uint256(controller.getTransactionState(txId)), uint256(TransactionState.Delivered));
+        assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Delivered));
 
         vm.expectEmit(true, false, false, false, address(controller));
         emit MessageCancelled(txId);
@@ -45,7 +45,7 @@ contract CrossChainControllerCancelMessageTest is CrossChainControllerBase {
         vm.prank(alice);
         controller.cancelMessage(TransactionLib.encode(failedTx));
 
-        assertEq(uint256(controller.getTransactionState(txId)), uint256(TransactionState.Cancelled));
+        assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Cancelled));
     }
 
     /// @dev Cancel is terminal: once cancelled, the same message can neither be
@@ -89,7 +89,7 @@ contract CrossChainControllerCancelMessageTest is CrossChainControllerBase {
 
         vm.prank(address(adapterA));
         controller.receiveMessage(bytes32(uint256(74)), TransactionLib.encode(okTx), CHAIN_ID);
-        assertEq(uint256(controller.getTransactionState(txId)), uint256(TransactionState.Executed));
+        assertEq(uint256(controller.getTransaction(txId).state), uint256(TransactionState.Executed));
 
         // An executed message is not cancellable.
         vm.expectRevert(abi.encodeWithSelector(Errors.MESSAGE_ALREADY_EXECUTED_OR_NOT_EXISTS.selector, txId));

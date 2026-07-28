@@ -57,6 +57,29 @@ contract CrossChainControllerUpdateConfigTest is CrossChainControllerBase {
         controller.updateConfig(chainIds, configs);
     }
 
+    function test_revertsIfLocalAdapterHasNoCode() public {
+        address codelessAdapter = makeAddr("codelessAdapter");
+
+        uint256[] memory chainIds = new uint256[](1);
+        chainIds[0] = CHAIN_ID;
+        CrossChainController.ChainConfig[] memory configs = new CrossChainController.ChainConfig[](1);
+        configs[0] = _lane(codelessAdapter, remoteAdapterA);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.HAS_NO_CODE.selector, codelessAdapter));
+        vm.prank(alice);
+        controller.updateConfig(chainIds, configs);
+    }
+
+    /// @dev `remoteAdapter` lives on another chain, so it can NOT be subject
+    ///      to a code check here; an EOA-looking remote must be accepted.
+    function test_remoteAdapterWithoutCodeIsAccepted() public {
+        // `remoteAdapterA` is a `makeAddr` address with no code.
+        _configureLane(CHAIN_ID, address(adapterA), remoteAdapterA);
+
+        (, address remote) = controller.chainToAdapter(CHAIN_ID);
+        assertEq(remote, remoteAdapterA);
+    }
+
     function test_revertsIfCallerUnauthorized() public {
         uint256[] memory chainIds = new uint256[](1);
         chainIds[0] = CHAIN_ID;
@@ -65,7 +88,7 @@ contract CrossChainControllerUpdateConfigTest is CrossChainControllerBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                DaoUnauthorized.selector, address(daoMock), address(controller), bob, updateConfigPermissionId
+                DaoUnauthorized.selector, address(daoMock), address(controller), bob, manageConfigPermissionId
             )
         );
         vm.prank(bob);

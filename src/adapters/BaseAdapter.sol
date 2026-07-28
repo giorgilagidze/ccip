@@ -28,6 +28,9 @@ abstract contract BaseAdapter is IBaseAdapter {
 
     /// @notice standard chain id -> remote trusted address allowed
     ///         to originate messages for that chain.
+    /// @dev IMPORTANT: Receive-path only. The receive path runs as the adapter (`CALL`), so this
+    ///      reads adapter storage; under the send path's `delegatecall` the same slots
+    ///      would resolve against the controller's storage instead.
     mapping(uint256 => address) internal _trustedRemotes;
 
     /// @notice Emitted when a trusted remote is set or cleared.
@@ -53,6 +56,8 @@ abstract contract BaseAdapter is IBaseAdapter {
     ///        DAO is adopted as the adapter's permission manager.
     /// @param _trustedRemoteConfigs The remote trusted config.
     constructor(address _crossChainController, TrustedRemoteConfig[] memory _trustedRemoteConfigs) {
+        if (_crossChainController == address(0)) revert Errors.ZERO_ADDRESS();
+
         CROSS_CHAIN_CONTROLLER = _crossChainController;
         _selfAddress = address(this);
 
@@ -67,12 +72,6 @@ abstract contract BaseAdapter is IBaseAdapter {
     /// @return The trusted remote controller address, or zero if unset.
     function trustedRemote(uint256 _chainId) public view returns (address) {
         return _trustedRemotes[_chainId];
-    }
-
-    /// @notice The address this adapter was deployed at.
-    /// @return The adapter's own address, from bytecode.
-    function selfAddress() public view returns (address) {
-        return _selfAddress;
     }
 
     /// @notice Once adapter receives a message, this forwards it to the CrossChainController.

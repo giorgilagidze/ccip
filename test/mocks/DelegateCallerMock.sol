@@ -18,7 +18,7 @@ import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 ///           storage-reading receive code runs against a foreign contract's
 ///           (this one's) storage instead of its own.
 ///
-///        2. `CCIPAdapter.sendMessage`'s `RECEIVER_ADDRESS_ZERO` and
+///        2. `CCIPAdapter.sendMessage`'s `ZERO_ADDRESS` and
 ///           `UNEXPECTED_NATIVE_VALUE` checks, which sit behind
 ///           `onlyDelegatecallFromController` (`address(this) ==
 ///           CROSS_CHAIN_CONTROLLER`). The real controller's `forwardMessage`

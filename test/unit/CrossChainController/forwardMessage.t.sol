@@ -262,7 +262,7 @@ contract CrossChainControllerForwardMessageTest is CrossChainControllerBase {
     // -------------------------------------------------------------------------
     // Residual risk: a malicious local adapter is delegatecalled and can
     // corrupt controller storage + execute on the DAO. Documents that
-    // UPDATE_CONFIG_PERMISSION must be DAO-only in production.
+    // MANAGE_CONTROLLER_CONFIG_PERMISSION must be DAO-only in production.
     // -------------------------------------------------------------------------
 
     function test_residualRisk_maliciousAdapterCanCorruptControllerAndExecuteOnDAO() public {

@@ -67,27 +67,24 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
     /// @inheritdoc IPluginSetup
     function prepareUninstallation(address _dao, SetupPayload calldata _payload)
         external
-        view
+        pure
         override
         returns (PermissionLib.MultiTargetPermission[] memory permissions)
     {
         // Guardian can not be determined if it was given a permission in prepareInstallation.
         // Below permission revoke are enough even if guardian stays with pause permission.
 
-        // Read the executor off the plugin rather than trusting the payload, so
-        // the revoke set cannot drift from what is actually held.
-        bool executorIsDao = CrossChainController(payable(_payload.plugin)).executor() == _dao;
-
-        permissions = _getPermissions(_dao, _payload.plugin, address(0), executorIsDao, PermissionLib.Operation.Revoke);
+        // There's a chance executor might have been set as DAO
+        // and permission not removed after it was set to another executor.
+        // Pass `true` so it always tries to revoke EXECUTE_PERMISSION from
+        // CrosschainController on the dao. Revoke doesn't revert if permission
+        // is not currently granted.
+        permissions = _getPermissions(_dao, _payload.plugin, address(0), true, PermissionLib.Operation.Revoke);
     }
 
     /// @notice Encodes the given installation parameters into a byte array
-    function encodeInstallationParameters(address executor, bool frozenUpgrade, address guardian)
-        external
-        pure
-        returns (bytes memory)
-    {
-        return abi.encode(executor, frozenUpgrade, guardian);
+    function encodeInstallationParameters(address executor, address guardian) external pure returns (bytes memory) {
+        return abi.encode(executor, guardian);
     }
 
     /// @notice Decodes the given byte array into the original installation parameters.
@@ -117,13 +114,13 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
 
         bytes32[8] memory pluginPermissionIds = [
             Permissions.FORWARD_MESSAGE_PERMISSION_ID,
-            Permissions.UPDATE_CONFIG_PERMISSION_ID,
+            Permissions.MANAGE_CONTROLLER_CONFIG_PERMISSION_ID,
             Permissions.RETRY_MESSAGE_PERMISSION_ID,
             Permissions.CANCEL_MESSAGE_PERMISSION_ID,
             Permissions.SWEEP_PERMISSION_ID,
             Permissions.PAUSE_PERMISSION_ID,
-            Permissions.UPDATE_EXECUTOR_PERMISSION_ID,
-            Permissions.FREEZE_UPGRADE_PERMISSION_ID
+            Permissions.UNPAUSE_PERMISSION_ID,
+            Permissions.UPGRADE_PLUGIN_PERMISSION_ID
         ];
 
         for (uint256 i = 0; i < pluginPermissionIds.length; i++) {
@@ -139,6 +136,9 @@ contract CrossChainControllerSetup is PluginUpgradeableSetup {
         uint256 next = pluginPermissionIds.length;
 
         if (hasGuardian) {
+            // Pause only, never unpause: a guardian is trusted to freeze the
+            // message paths during an incident, but reopening them stays with
+            // the DAO.
             permissions[next++] = PermissionLib.MultiTargetPermission({
                 operation: _op,
                 where: _plugin,

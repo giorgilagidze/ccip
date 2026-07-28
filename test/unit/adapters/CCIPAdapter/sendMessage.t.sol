@@ -32,14 +32,14 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
         adapter.sendMessage(remoteAdapter, SEL_ETH_MAINNET, 200_000, "");
     }
 
-    /// @dev `RECEIVER_ADDRESS_ZERO` sits BEHIND `onlyDelegatecallFromController`
+    /// @dev `ZERO_ADDRESS` sits BEHIND `onlyDelegatecallFromController`
     ///      and is unreachable through the real controller today. `isolationAdapter`
     ///      + `delegateCallerMock` reproduce the `address(this) ==
     ///      CROSS_CHAIN_CONTROLLER` context directly to prove the check works.
     function test_isolated_revertsIfReceiverIsZero() public {
         bytes memory data = abi.encodeCall(IBaseAdapter.sendMessage, (address(0), SEL_ETH_MAINNET, 200_000, bytes("")));
 
-        vm.expectRevert(Errors.RECEIVER_ADDRESS_ZERO.selector);
+        vm.expectRevert(Errors.ZERO_ADDRESS.selector);
         delegateCallerMock.delegateCall(address(isolationAdapter), data);
     }
 
@@ -49,6 +49,67 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
 
         vm.expectRevert(Errors.UNEXPECTED_NATIVE_VALUE.selector);
         delegateCallerMock.delegateCall{ value: 1 ether }(address(isolationAdapter), data);
+    }
+
+    // -------------------------------------------------------------------------
+    // The bridge must still serve the destination chain.
+    // -------------------------------------------------------------------------
+
+    /// @dev A locally configured lane is not proof CCIP still serves the
+    ///      destination: support can be dropped after `updateConfig` ran.
+    function test_revertsIfRouterDoesNotSupportDestinationChain() public {
+        _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
+        vm.deal(address(controller), 1 ether);
+
+        router.setChainSupported(false);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.DESTINATION_CHAIN_ID_NOT_SUPPORTED.selector, uint256(SEL_ETH_MAINNET))
+        );
+        controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "");
+    }
+
+    function test_unsupportedDestinationChain_neverReachesRouterSend() public {
+        _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
+        vm.deal(address(controller), 1 ether);
+
+        router.setChainSupported(false);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.DESTINATION_CHAIN_ID_NOT_SUPPORTED.selector, uint256(SEL_ETH_MAINNET))
+        );
+        controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "");
+
+        assertEq(router.ccipSendCallCount(), 0, "no message may be dispatched to an unsupported chain");
+    }
+
+    /// @dev The support check sits AHEAD of the fee logic, so an unsupported
+    ///      chain surfaces as `DESTINATION_CHAIN_ID_NOT_SUPPORTED` rather than
+    ///      as a misleading insufficient-balance error.
+    function test_unsupportedDestinationChain_takesPrecedenceOverInsufficientFeeBalance() public {
+        _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
+        router.setFee(1 ether);
+        // Controller is left with a zero balance: the fee check would revert too.
+        router.setChainSupported(false);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.DESTINATION_CHAIN_ID_NOT_SUPPORTED.selector, uint256(SEL_ETH_MAINNET))
+        );
+        controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "");
+    }
+
+    function test_sendSucceedsWhenRouterSupportsDestinationChain() public {
+        _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
+        uint256 feeAmount = 0.01 ether;
+        router.setFee(feeAmount);
+        vm.deal(address(controller), feeAmount);
+
+        router.setChainSupported(true);
+
+        controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "");
+
+        assertEq(router.ccipSendCallCount(), 1);
+        assertEq(router.lastDestChainSelector(), SEL_ETH_MAINNET);
     }
 
     // -------------------------------------------------------------------------
@@ -219,7 +280,7 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
     ///      `forwardMessage`, using the REAL `CCIPAdapter`. Layout (per
     ///      `forge inspect .../CrossChainController.sol storageLayout`):
     ///      slot 0 = `Pausable._paused`, slot 1 = `_currentTxNonce`, slot 2 =
-    ///      `_transactionState`, slot 3 = `chainToAdapter`. The nonce slot
+    ///      `_transactions`, slot 3 = `chainToAdapter`. The nonce slot
     ///      legitimately increments on send (checked separately); everything
     ///      else must be untouched, as must the adapter's own (separate-address)
     ///      storage.
@@ -256,7 +317,7 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
         assertEq(
             vm.load(address(controller), bytes32(TRANSACTION_STATE_SLOT)),
             txStateBefore,
-            "_transactionState base slot mutated by send"
+            "_transactions base slot mutated by send"
         );
         assertEq(
             vm.load(address(controller), bytes32(CHAIN_TO_ADAPTER_SLOT)),
