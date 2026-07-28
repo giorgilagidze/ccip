@@ -9,8 +9,8 @@ Routing works off a per-destination config. When the controller is asked to forw
 message, it is given a `destinationId` which is the standard chain id always. The config stored under that id holds two
 addresses:
 
-- `localAdapter` — the adapter on this chain that the controller hands the message to.
-- `remoteAdapter` — the address on the destination chain that the message is addressed
+- `localAdapter` - the adapter on this chain that the controller hands the message to.
+- `remoteAdapter` - the address on the destination chain that the message is addressed
   to.
 
 On the destination chain, the arriving message is delivered to that remote adapter, which
@@ -37,7 +37,7 @@ controller's own sensitive functions, a compromised bridge inherits that power.
 
 This is precisely why the executor is kept separate from the L2 DAO. Pointing the
 controller's `executor` at the L2 DAO and granting that DAO sensitive permissions on the
-controller reproduces the same exposure — the identity of the executor is irrelevant, only
+controller reproduces the same exposure - the identity of the executor is irrelevant, only
 its permissions matter.
 
 **Recommended configuration.** Set the controller's `executor` to a dedicated
@@ -52,7 +52,7 @@ the cross-chain path - so a compromised bridge cannot reach it.
 > These options are not mutually exclusive: the L2 controller's sensitive functions can be
 > made callable by both the `Executor` (over the cross-chain path) and the L2 DAO. That
 > keeps L1 governance in control by default while leaving the L2 DAO able to act
-> immediately when speed matters — at the cost of accepting the bridge-compromise exposure
+> immediately when speed matters - at the cost of accepting the bridge-compromise exposure
 > described above.
 
 ### The Diagram
@@ -73,7 +73,7 @@ flowchart TB
     ROUTER2[CCIPRouter L2]
     ADP2[CCIPAdapter L2]
     CCC2[CrossChainController]
-    DAO2["DAO L2<br/>—<br/>updateConfig<br/>pause / unpause<br/>upgradeTo<br/>cancelMessage<br/>retryMessage<br/>sweep<br/>updateExecutor<br/>updateRetryCutoff"]
+    DAO2["DAO L2<br/>-<br/>updateConfig<br/>pause / unpause<br/>upgradeTo<br/>cancelMessage<br/>retryMessage<br/>sweep<br/>updateExecutor<br/>updateRetryCutoff"]
     EXEC[Executor]
   end
 
@@ -98,16 +98,16 @@ recovered from while the system is paused.
 
 | Function | Access | What it does |
 |---|---|---|
-| `forwardMessage(dstChainId, gasLimit, message)` | `FORWARD_MESSAGE_PERMISSION` | Outbound entry point. Builds a `Transaction` with the next nonce, ABI-encodes it, and `delegatecall`s the local adapter's `sendMessage`. The `delegatecall` is what makes the adapter code run **as the controller**: the bridge fee is paid straight from the controller's own balance so adapters never custody funds, and the bridge attributes the message to the controller's address rather than the adapter's — which is why the far side trusts the remote *controller* as sender, and why an adapter may be swapped without changing who the destination trusts. Returns `txId`. |
-| `quoteFee(dstChainId, gasLimit, message)` | view | Quotes the exact bytes `forwardMessage` would send, returning `(feeToken, fee, available)` — the last being this contract's current balance of that token. Use it to check funding before sending. |
+| `forwardMessage(dstChainId, gasLimit, message)` | `FORWARD_MESSAGE_PERMISSION` | Outbound entry point. Builds a `Transaction` with the next nonce, ABI-encodes it, and `delegatecall`s the local adapter's `sendMessage`. The `delegatecall` is what makes the adapter code run **as the controller**: the bridge fee is paid straight from the controller's own balance so adapters never custody funds, and the bridge attributes the message to the controller's address rather than the adapter's - which is why the far side trusts the remote *controller* as sender, and why an adapter may be swapped without changing who the destination trusts. Returns `txId`. |
+| `quoteFee(dstChainId, gasLimit, message)` | view | Quotes the exact bytes `forwardMessage` would send, returning `(feeToken, fee, available)` - the last being this contract's current balance of that token. Use it to check funding before sending. |
 | `receiveMessage(messageId, encodedTx, originChainId)` | `onlyLocalAdapter(originChainId)` | Inbound entry point. Decodes the transaction, re-verifies both chain ids against the payload, rejects replays. Success → `Executed`; revert → `Delivered` and retryable. Never reverts on a bad payload. |
 | `executeActions(txId, payload)` | self only | Decodes `Action[]` and calls the executor. External purely so `receiveMessage` can wrap it in `try/catch`; decoding lives here so malformed payloads are captured rather than bouncing the bridge delivery. |
-| `retryMessage(encodedTx)` | `RETRY_MESSAGE_PERMISSION` | Re-runs a `Delivered` message. Does **not** catch — if it fails again the whole call reverts and the message stays `Delivered`, so it can be retried later. |
+| `retryMessage(encodedTx)` | `RETRY_MESSAGE_PERMISSION` | Re-runs a `Delivered` message. Does **not** catch - if it fails again the whole call reverts and the message stays `Delivered`, so it can be retried later. |
 | `cancelMessage(encodedTx)` | `CANCEL_MESSAGE_PERMISSION` | Burns a `Delivered` message. The `txId` moves to `Cancelled` and never back to `None`, so it can never be re-delivered or retried. |
 | `updateConfig(chainIds, configs)` | `MANAGE_CONTROLLER_CONFIG_PERMISSION` | Sets or clears lanes, keyed by **remote** chain id. A lane must be fully set or fully cleared; chain id `0` is rejected as it marks "unset". All-or-nothing because the two halves serve opposite directions and a half-set lane is broken either way: `localAdapter` alone can send but authenticates nothing inbound, `remoteAdapter` alone accepts inbound but cannot send. Requiring both keeps "is this lane configured?" a single unambiguous fact. Clearing both is likewise the only clean way to retire a lane: it shuts the route down in both directions at once, so no outbound message can be sent to a chain that is no longer trusted and no inbound message from it is still accepted. |
-| `updateExecutor(executor)` | `MANAGE_CONTROLLER_CONFIG_PERMISSION` | Repoints the controller at a different execution target. Must have code. The call validates **only** that the target has code — it cannot check that the new executor actually authorizes the controller to call `execute`. Repointing to a target that does not is the easiest way to silently brick the receive path; see the executor runbook below. |
-| `updateRetryCutoff(originChainId, cutoff)` | `MANAGE_CONTROLLER_CONFIG_PERMISSION` | Blocks every `Delivered` message from `originChainId` that arrived at or before `cutoff` from ever being retried. Does in one call what `cancelMessage` does one message at a time. The cutoff must be strictly increasing and cannot be set past `block.timestamp`, so it is aimed at messages that have already arrived — it cannot pre-emptively block messages that arrive with a later timestamp. One edge exists: the blocking check is inclusive (`bridgedAt <= cutoff`), so a message delivered in the same second as a `cutoff = block.timestamp` update also falls under it, even though it arrived after the update. The error direction is conservative (a fresh failed message becomes non-retryable, and can only be blocked, never executed, by this), and the decommissioning runbook clears the lane before setting the cutoff, so no such delivery can slip in between. To stop in-flight messages, call `updateConfig` to clear the lane's adapters: with no `localAdapter` registered for that chain id, `receiveMessage` no longer authenticates the incoming call and the message is rejected on arrival. |
-| `pause()` / `unpause()` | `PAUSE_PERMISSION` / `UNPAUSE_PERMISSION` | Halts and resumes the three message paths that move messages forward: `forwardMessage`, `receiveMessage` and `retryMessage`. The two directions carry **separate permissions**: a guardian can be trusted to freeze without being trusted to reopen, so a compromised guardian key cannot unpause mid-incident while a malicious message is still pending — the setup grants the guardian `PAUSE_PERMISSION` only, and `UNPAUSE_PERMISSION` stays with the DAO. `cancelMessage` is deliberately **not** gated — pausing exists to stop bad messages from executing, and cancelling is how you stop a pending one for good. If it were gated, the only way to cancel a pending message would be to unpause first, which reopens the paths you just closed. |
+| `updateExecutor(executor)` | `MANAGE_CONTROLLER_CONFIG_PERMISSION` | Repoints the controller at a different execution target. Must have code. The call validates **only** that the target has code - it cannot check that the new executor actually authorizes the controller to call `execute`. Repointing to a target that does not is the easiest way to silently brick the receive path; see the executor runbook below. |
+| `updateRetryCutoff(originChainId, cutoff)` | `MANAGE_CONTROLLER_CONFIG_PERMISSION` | Blocks every `Delivered` message from `originChainId` that arrived at or before `cutoff` from ever being retried. Does in one call what `cancelMessage` does one message at a time. The cutoff must be strictly increasing and cannot be set past `block.timestamp`, so it is aimed at messages that have already arrived - it cannot pre-emptively block messages that arrive with a later timestamp. One edge exists: the blocking check is inclusive (`bridgedAt <= cutoff`), so a message delivered in the same second as a `cutoff = block.timestamp` update also falls under it, even though it arrived after the update. The error direction is conservative (a fresh failed message becomes non-retryable, and can only be blocked, never executed, by this), and the decommissioning runbook clears the lane before setting the cutoff, so no such delivery can slip in between. To stop in-flight messages, call `updateConfig` to clear the lane's adapters: with no `localAdapter` registered for that chain id, `receiveMessage` no longer authenticates the incoming call and the message is rejected on arrival. |
+| `pause()` / `unpause()` | `PAUSE_PERMISSION` / `UNPAUSE_PERMISSION` | Halts and resumes the three message paths that move messages forward: `forwardMessage`, `receiveMessage` and `retryMessage`. The two directions carry **separate permissions**: a guardian can be trusted to freeze without being trusted to reopen, so a compromised guardian key cannot unpause mid-incident while a malicious message is still pending - the setup grants the guardian `PAUSE_PERMISSION` only, and `UNPAUSE_PERMISSION` stays with the DAO. `cancelMessage` is deliberately **not** gated - pausing exists to stop bad messages from executing, and cancelling is how you stop a pending one for good. If it were gated, the only way to cancel a pending message would be to unpause first, which reopens the paths you just closed. |
 | `sweep(token, to, amount)` | `SWEEP_PERMISSION` | Moves pre-funded fee assets out, typically back to the DAO. `address(0)` means native currency. |
 
 #### `IBaseAdapter` / `BaseAdapter`
@@ -120,14 +120,14 @@ itself so it can read its own trusted-remote map.
 | Function | Access | What it does |
 |---|---|---|
 | `sendMessage(receiver, dstChainId, gasLimit, message)` | `onlyDelegatecallFromController` | Sends over the bridge. Because it is delegatecalled, the fee comes from the **controller's** balance and the bridge attributes the message to the **controller's** address. Returns `(messageId, fee)`. |
-| `toNativeChainId(chainId)` / `fromNativeChainId(chainId)` | view | Translates between standard EVM chain ids and the bridge's own encoding. Both **must revert** on unmapped ids — returning `0` would silently address the wrong lane. |
+| `toNativeChainId(chainId)` / `fromNativeChainId(chainId)` | view | Translates between standard EVM chain ids and the bridge's own encoding. Both **must revert** on unmapped ids - returning `0` would silently address the wrong lane. |
 | `_forwardMessage(messageId, payload, originChainId)` | internal | Hands an authenticated inbound message to the controller via a plain `CALL`. Guarded by an `address(this) == _selfAddress` check, so it can never run under `delegatecall`. |
 
 #### `Executor`
 
 | Function | Access | What it does |
 |---|---|---|
-| `execute(callId, actions, allowFailureMap)` | `onlyOwner` | Runs the action batch. The OSx commons `Executor` is permissionless by design; this variant gates it behind `Ownable` so it can be deployed standalone with the controller as owner. All other behaviour — bounds check, failure map, reentrancy guard, `Executed` event — is unchanged. |
+| `execute(callId, actions, allowFailureMap)` | `onlyOwner` | Runs the action batch. The OSx commons `Executor` is permissionless by design; this variant gates it behind `Ownable` so it can be deployed standalone with the controller as owner. All other behaviour - bounds check, failure map, reentrancy guard, `Executed` event - is unchanged. |
 
 > The controller always calls `execute` with an `allowFailureMap` of `0`, so every action
 > in an inbound payload must succeed or the whole batch is captured as `Delivered` for
@@ -165,9 +165,9 @@ both:
 
 To stop trusting a chain, do both in one proposal:
 
-1. `updateConfig([chainId], [all-zero ChainConfig])` — no further messages from that
+1. `updateConfig([chainId], [all-zero ChainConfig])` - no further messages from that
    chain arrive.
-2. `updateRetryCutoff(chainId, block.timestamp)` — nothing it already delivered can
+2. `updateRetryCutoff(chainId, block.timestamp)` - nothing it already delivered can
    ever be retried.
 
 Doing only step 1 leaves the delivered backlog executable by any
@@ -181,15 +181,15 @@ controller to call `execute` on it** at the moment of the switch. `updateExecuto
 itself only checks that the target has code; it cannot verify authorization, because
 every `IExecutor` implementation gates `execute` its own way:
 
-- `executor = dao` — `DAO.execute` requires the caller to hold `EXECUTE_PERMISSION`
+- `executor = dao` - `DAO.execute` requires the caller to hold `EXECUTE_PERMISSION`
   on the DAO. The setup grants this to the controller only at install time, and only
   when it was *installed* with `executor = dao`. Switching to the DAO later does
   **not** grant it.
-- dedicated `Executor` — `execute` is `onlyOwner`. The setup wires ownership only for
+- dedicated `Executor` - `execute` is `onlyOwner`. The setup wires ownership only for
   the executor it deploys itself. A new `Executor` deployed later is owned by its
   deployer until someone calls `transferOwnership(controller)`.
 
-**Why this bricks the receive path.** The misconfiguring proposal itself succeeds —
+**Why this bricks the receive path.** The misconfiguring proposal itself succeeds -
 the target has code, `ExecutorUpdated` is emitted, nothing looks wrong. But from that
 moment every inbound message reaches `IExecutor(executor).execute(...)` and reverts
 (`Unauthorized` / not-owner). The revert is swallowed by `receiveMessage`'s
@@ -201,7 +201,7 @@ was just broken, that round-trip may not even be possible over the lane itself.
 
 An `updateExecutor` proposal must therefore bundle, in this order:
 
-1. The authorization on the new executor — grant the controller
+1. The authorization on the new executor - grant the controller
    `EXECUTE_PERMISSION` on the DAO when repointing to the DAO, or
    `transferOwnership(controller)` when repointing to a dedicated `Executor`.
 2. The `updateExecutor` call itself.
@@ -211,10 +211,10 @@ An `updateExecutor` proposal must therefore bundle, in this order:
 
 ### Uninstallation
 
-Uninstalling the plugin revokes permissions — nothing more. `prepareUninstallation`
+Uninstalling the plugin revokes permissions - nothing more. `prepareUninstallation`
 returns the revoke list, but a setup contract cannot call into the plugin, so the
 controller's own state survives uninstallation untouched: `chainToAdapter` keeps its
-lanes, and `receiveMessage` is not gated by a DAO permission — it is guarded only by
+lanes, and `receiveMessage` is not gated by a DAO permission - it is guarded only by
 that lane config. The result is that an "uninstalled" controller **keeps accepting
 inbound messages** from its configured remote chains and keeps executing them on its
 executor.
@@ -223,24 +223,24 @@ Whether that is dangerous depends on the executor. When `executor = dao`, the
 uninstall revokes the controller's `EXECUTE_PERMISSION` on the DAO, so inbound
 messages can no longer do anything. But with a dedicated `Executor`, any permissions
 the DAO granted that executor on *other* contracts remain reachable: remote
-governance — or a compromised bridge — retains exactly that power after the plugin is
+governance - or a compromised bridge - retains exactly that power after the plugin is
 "gone".
 
 An uninstall proposal must therefore not consist of the uninstallation alone. Bundle,
 in this order:
 
 1. `updateConfig` clearing **every** configured lane (all-zero `ChainConfig` per
-   chain id) — shuts the route down in both directions; inbound messages fail
+   chain id) - shuts the route down in both directions; inbound messages fail
    authentication on arrival. Per the decommissioning runbook above, pair each
    cleared lane with `updateRetryCutoff(chainId, block.timestamp)`: the uninstall
    only revokes the permissions the setup granted, so a `RETRY_MESSAGE_PERMISSION`
    holder the DAO added separately could otherwise still execute the delivered
    backlog.
-2. Optionally `pause()` — belt-and-braces freeze of the message paths; there is no
+2. Optionally `pause()` - belt-and-braces freeze of the message paths; there is no
    reason to leave an abandoned controller unpaused.
 3. `sweep` of any pre-funded fee assets back to the DAO.
 4. Revoke any permissions the DAO granted the dedicated `Executor` elsewhere.
 5. The uninstallation itself.
 
-Steps 1–3 require the permissions being revoked in step 5, so they cannot be done
-afterwards — a controller uninstalled first can never be cleaned up.
+Steps 1-3 require the permissions being revoked in step 5, so they cannot be done
+afterwards - a controller uninstalled first can never be cleaned up.
