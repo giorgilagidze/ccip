@@ -2,17 +2,11 @@
 
 pragma solidity ^0.8.17;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {
-    IRouterClient
-} from "@chainlink/contracts-ccip/contracts/interfaces/IRouterClient.sol";
-import {Client} from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
-import {
-    IAny2EVMMessageReceiver
-} from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
-import {
-    CallWithExactGas
-} from "@chainlink/contracts/src/v0.8/shared/call/CallWithExactGas.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IRouterClient } from "@chainlink/contracts-ccip/contracts/interfaces/IRouterClient.sol";
+import { Client } from "@chainlink/contracts-ccip/contracts/libraries/Client.sol";
+import { IAny2EVMMessageReceiver } from "@chainlink/contracts-ccip/contracts/interfaces/IAny2EVMMessageReceiver.sol";
+import { CallWithExactGas } from "@chainlink/contracts/src/v0.8/shared/call/CallWithExactGas.sol";
 
 /// @notice A pair-able CCIP Router mock that actually DELIVERS messages to a
 ///         peer router, so both ends of a lane can be exercised in a single
@@ -137,19 +131,11 @@ contract CCIPRelayRouterMock is IRouterClient {
 
     /// @notice Mirrors the real Router's event closely enough to assert on.
     event MessageSent(
-        bytes32 indexed messageId,
-        uint64 indexed destinationChainSelector,
-        address indexed sender,
-        address receiver
+        bytes32 indexed messageId, uint64 indexed destinationChainSelector, address indexed sender, address receiver
     );
 
     /// @notice Emitted after every delivery attempt, successful or not.
-    event MessageExecuted(
-        bytes32 indexed messageId,
-        address indexed receiver,
-        bool success,
-        bytes returnData
-    );
+    event MessageExecuted(bytes32 indexed messageId, address indexed receiver, bool success, bytes returnData);
 
     /// @param _localChainSelector The CCIP selector of the chain this router
     ///        stands in for.
@@ -173,10 +159,7 @@ contract CCIPRelayRouterMock is IRouterClient {
 
     /// @notice Registers the router that serves a destination selector.
     /// @dev Both directions must be registered for a round trip.
-    function setPeer(
-        uint64 _destinationChainSelector,
-        CCIPRelayRouterMock _peer
-    ) external {
+    function setPeer(uint64 _destinationChainSelector, CCIPRelayRouterMock _peer) external {
         peers[_destinationChainSelector] = _peer;
     }
 
@@ -185,17 +168,12 @@ contract CCIPRelayRouterMock is IRouterClient {
     // -------------------------------------------------------------------------
 
     /// @inheritdoc IRouterClient
-    function isChainSupported(
-        uint64 _destChainSelector
-    ) external view returns (bool) {
+    function isChainSupported(uint64 _destChainSelector) external view returns (bool) {
         return address(peers[_destChainSelector]) != address(0);
     }
 
     /// @inheritdoc IRouterClient
-    function getFee(
-        uint64 _destChainSelector,
-        Client.EVM2AnyMessage memory
-    ) external view returns (uint256) {
+    function getFee(uint64 _destChainSelector, Client.EVM2AnyMessage memory) external view returns (uint256) {
         if (address(peers[_destChainSelector]) == address(0)) {
             revert UnsupportedDestinationChain(_destChainSelector);
         }
@@ -204,10 +182,11 @@ contract CCIPRelayRouterMock is IRouterClient {
     }
 
     /// @inheritdoc IRouterClient
-    function ccipSend(
-        uint64 _destinationChainSelector,
-        Client.EVM2AnyMessage calldata _message
-    ) external payable returns (bytes32) {
+    function ccipSend(uint64 _destinationChainSelector, Client.EVM2AnyMessage calldata _message)
+        external
+        payable
+        returns (bytes32)
+    {
         if (cursed) revert Cursed();
 
         if (address(peers[_destinationChainSelector]) == address(0)) {
@@ -234,24 +213,13 @@ contract CCIPRelayRouterMock is IRouterClient {
             // Pull the fee exactly like the real Router: this reverts unless
             // the caller granted an allowance first.
             require(
-                IERC20(_message.feeToken).transferFrom(
-                    msg.sender,
-                    address(this),
-                    fee
-                ),
+                IERC20(_message.feeToken).transferFrom(msg.sender, address(this), fee),
                 "CCIPRelayRouterMock: transferFrom failed"
             );
         }
 
         uint64 sequence = sequenceNumber[_destinationChainSelector]++;
-        bytes32 messageId = keccak256(
-            abi.encode(
-                LOCAL_CHAIN_SELECTOR,
-                _destinationChainSelector,
-                msg.sender,
-                sequence
-            )
-        );
+        bytes32 messageId = keccak256(abi.encode(LOCAL_CHAIN_SELECTOR, _destinationChainSelector, msg.sender, sequence));
 
         // Safe: the range check above already rejected anything wider than
         // `uint160`, exactly as the real Router does.
@@ -273,12 +241,7 @@ contract CCIPRelayRouterMock is IRouterClient {
         );
         _indexOfPlusOne[messageId] = _sent.length;
 
-        emit MessageSent(
-            messageId,
-            _destinationChainSelector,
-            msg.sender,
-            receiver
-        );
+        emit MessageSent(messageId, _destinationChainSelector, msg.sender, receiver);
 
         return messageId;
     }
@@ -298,9 +261,7 @@ contract CCIPRelayRouterMock is IRouterClient {
     }
 
     /// @notice Returns a queued message by its id.
-    function sentById(
-        bytes32 _messageId
-    ) external view returns (SentMessage memory) {
+    function sentById(bytes32 _messageId) external view returns (SentMessage memory) {
         return _sent[_indexOf(_messageId)];
     }
 
@@ -308,15 +269,9 @@ contract CCIPRelayRouterMock is IRouterClient {
     function messageIdAt(uint256 _index) public view returns (bytes32) {
         SentMessage storage message = _sent[_index];
 
-        return
-            keccak256(
-                abi.encode(
-                    LOCAL_CHAIN_SELECTOR,
-                    message.destinationChainSelector,
-                    message.sender,
-                    _sequenceOf(_index)
-                )
-            );
+        return keccak256(
+            abi.encode(LOCAL_CHAIN_SELECTOR, message.destinationChainSelector, message.sender, _sequenceOf(_index))
+        );
     }
 
     /// @notice Delivers a queued message with the gas limit it was sent with.
@@ -347,10 +302,7 @@ contract CCIPRelayRouterMock is IRouterClient {
     /// @param _messageId The id returned by `ccipSend`.
     /// @param _gasOverride The gas limit to hand the receiver this time.
     /// @return success Whether `ccipReceive` succeeded.
-    function manualExecute(
-        bytes32 _messageId,
-        uint256 _gasOverride
-    ) external returns (bool success) {
+    function manualExecute(bytes32 _messageId, uint256 _gasOverride) external returns (bool success) {
         return _execute(_messageId, _gasOverride);
     }
 
@@ -369,31 +321,17 @@ contract CCIPRelayRouterMock is IRouterClient {
     /// @param _gasLimit The exact gas to give the receiver.
     /// @return success Whether the call succeeded.
     /// @return returnData The (truncated) return data of the call.
-    function executeDelivery(
-        Client.Any2EVMMessage memory _message,
-        address _receiver,
-        uint256 _gasLimit
-    ) public returns (bool success, bytes memory returnData) {
-        bytes memory payload = abi.encodeWithSelector(
-            IAny2EVMMessageReceiver.ccipReceive.selector,
-            _message
+    function executeDelivery(Client.Any2EVMMessage memory _message, address _receiver, uint256 _gasLimit)
+        public
+        returns (bool success, bytes memory returnData)
+    {
+        bytes memory payload = abi.encodeWithSelector(IAny2EVMMessageReceiver.ccipReceive.selector, _message);
+
+        (success, returnData,) = CallWithExactGas._callWithExactGasSafeReturnData(
+            payload, _receiver, _gasLimit, GAS_FOR_CALL_EXACT_CHECK, MAX_RET_BYTES
         );
 
-        (success, returnData, ) = CallWithExactGas
-            ._callWithExactGasSafeReturnData(
-                payload,
-                _receiver,
-                _gasLimit,
-                GAS_FOR_CALL_EXACT_CHECK,
-                MAX_RET_BYTES
-            );
-
-        emit MessageExecuted(
-            _message.messageId,
-            _receiver,
-            success,
-            returnData
-        );
+        emit MessageExecuted(_message.messageId, _receiver, success, returnData);
     }
 
     // -------------------------------------------------------------------------
@@ -402,10 +340,7 @@ contract CCIPRelayRouterMock is IRouterClient {
 
     /// @dev Runs one delivery attempt of a queued message through the peer
     ///      router. Records the outcome; a failure leaves the message queued.
-    function _execute(
-        bytes32 _messageId,
-        uint256 _gasLimit
-    ) internal returns (bool success) {
+    function _execute(bytes32 _messageId, uint256 _gasLimit) internal returns (bool success) {
         SentMessage storage message = _sent[_indexOf(_messageId)];
 
         if (message.executed) revert AlreadyExecuted(_messageId);
@@ -414,17 +349,17 @@ contract CCIPRelayRouterMock is IRouterClient {
 
         bytes memory returnData;
         (success, returnData) = peers[message.destinationChainSelector]
-            .executeDelivery(
-                Client.Any2EVMMessage({
-                    messageId: _messageId,
-                    sourceChainSelector: LOCAL_CHAIN_SELECTOR,
-                    sender: abi.encode(message.sender),
-                    data: message.data,
-                    destTokenAmounts: new Client.EVMTokenAmount[](0)
-                }),
-                message.receiver,
-                _gasLimit
-            );
+        .executeDelivery(
+            Client.Any2EVMMessage({
+                messageId: _messageId,
+                sourceChainSelector: LOCAL_CHAIN_SELECTOR,
+                sender: abi.encode(message.sender),
+                data: message.data,
+                destTokenAmounts: new Client.EVMTokenAmount[](0)
+            }),
+            message.receiver,
+            _gasLimit
+        );
 
         lastDeliveryReturnData = returnData;
 
@@ -452,9 +387,7 @@ contract CCIPRelayRouterMock is IRouterClient {
     /// @dev Decodes the gas limit out of `extraArgs`, validating the tag the
     ///      way the real Router does. An empty `extraArgs` means the CCIP
     ///      default; an unknown tag is rejected.
-    function _gasLimitOf(
-        bytes calldata _extraArgs
-    ) internal pure returns (uint256) {
+    function _gasLimitOf(bytes calldata _extraArgs) internal pure returns (uint256) {
         if (_extraArgs.length == 0) return 200_000;
 
         // Truncation to the leading four bytes IS the tag read; this mirrors
@@ -463,10 +396,7 @@ contract CCIPRelayRouterMock is IRouterClient {
         bytes4 tag = bytes4(_extraArgs);
 
         if (tag == Client.GENERIC_EXTRA_ARGS_V2_TAG) {
-            return
-                abi
-                    .decode(_extraArgs[4:], (Client.GenericExtraArgsV2))
-                    .gasLimit;
+            return abi.decode(_extraArgs[4:], (Client.GenericExtraArgsV2)).gasLimit;
         } else if (tag == Client.EVM_EXTRA_ARGS_V1_TAG) {
             return abi.decode(_extraArgs[4:], (uint256));
         }

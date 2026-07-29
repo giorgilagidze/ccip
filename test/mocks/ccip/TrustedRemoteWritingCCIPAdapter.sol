@@ -13,10 +13,7 @@ import { BaseAdapter } from "@src/adapters/BaseAdapter.sol";
 ///         immutables-only rule exists for.
 /// @dev DO NOT USE IN PRODUCTION!
 contract TrustedRemoteWritingCCIPAdapter is CCIPAdapter {
-    constructor(
-        address _controller,
-        address _router
-    )
+    constructor(address _controller, address _router)
         CCIPAdapter(_controller, _router, address(0), new BaseAdapter.TrustedRemoteConfig[](0))
     { }
 

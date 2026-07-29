@@ -28,6 +28,10 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     // Real CCIP chain selectors / standard chain ids used throughout.
     // -------------------------------------------------------------------------
 
+    /// @dev The failure-path gas reserve the fixture controller is
+    ///      initialized with. See `CrossChainController.initialize`.
+    uint256 internal constant MIN_FAILED_MESSAGE_GAS = 45_000;
+
     uint64 internal constant SEL_ETH_MAINNET = 5009297550715157269;
     uint64 internal constant SEL_BASE = 15971525489660198786;
     uint64 internal constant SEL_ARBITRUM_ONE = 4949039107694359620;
@@ -79,7 +83,10 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
         controller = CrossChainController(
             payable(ProxyLib.deployUUPSProxy(
                     address(new CrossChainController()),
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(daoMock)), address(daoMock)))
+                    abi.encodeCall(
+                        CrossChainController.initialize,
+                        (IDAO(address(daoMock)), address(daoMock), MIN_FAILED_MESSAGE_GAS)
+                    )
                 ))
         );
         router = new CCIPRouterMock();
@@ -172,5 +179,38 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
     uint256 internal constant PAUSED_SLOT = 301;
     uint256 internal constant NONCE_SLOT = 351;
     uint256 internal constant TRANSACTION_STATE_SLOT = 352;
-    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 353;
+    uint256 internal constant RETRY_CUTOFFS_SLOT = 353;
+    uint256 internal constant CHAIN_TO_ADAPTER_SLOT = 354;
+
+    /// @notice Pins the slot constants above to the real layout.
+    /// @dev Without this, a stale constant makes the collision tests read a word
+    ///      nothing ever writes, so they compare zero to zero and pass
+    ///      vacuously. Each slot is verified by writing through a public entry
+    ///      point and observing that exact word move.
+    function test_storageSlotConstantsMatchLayout() public {
+        // `chainToAdapter[chainId]` -- word 0 of the struct is `localAdapter`.
+        _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
+        assertEq(
+            address(
+                uint160(
+                    uint256(
+                        vm.load(address(controller), keccak256(abi.encode(CHAIN_ETH_MAINNET, CHAIN_TO_ADAPTER_SLOT)))
+                    )
+                )
+            ),
+            address(adapter),
+            "CHAIN_TO_ADAPTER_SLOT stale"
+        );
+
+        // `_paused` -- byte 0 of its slot, flipped by `pause()`.
+        controller.pause();
+        assertEq(uint256(vm.load(address(controller), bytes32(PAUSED_SLOT))) & 0xff, 1, "PAUSED_SLOT stale");
+        controller.unpause();
+
+        // `_currentTxNonce` -- moves by exactly one per forward.
+        router.setFee(0);
+        uint256 nonceBefore = uint256(vm.load(address(controller), bytes32(NONCE_SLOT)));
+        controller.forwardMessage(CHAIN_ETH_MAINNET, 200_000, "");
+        assertEq(uint256(vm.load(address(controller), bytes32(NONCE_SLOT))), nonceBefore + 1, "NONCE_SLOT stale");
+    }
 }

@@ -34,7 +34,8 @@ contract CCIPAdapterConstructorTest is CCIPAdapterBase {
         BaseAdapter.TrustedRemoteConfig[] memory configs = new BaseAdapter.TrustedRemoteConfig[](2);
         configs[0] =
             BaseAdapter.TrustedRemoteConfig({ standardChainId: CHAIN_ETH_MAINNET, trustedRemote: remoteController });
-        configs[1] = BaseAdapter.TrustedRemoteConfig({ standardChainId: CHAIN_BASE, trustedRemote: baseRemoteController });
+        configs[1] =
+            BaseAdapter.TrustedRemoteConfig({ standardChainId: CHAIN_BASE, trustedRemote: baseRemoteController });
 
         vm.expectEmit(true, true, true, true);
         emit TrustedRemoteSet(CHAIN_ETH_MAINNET, remoteController);

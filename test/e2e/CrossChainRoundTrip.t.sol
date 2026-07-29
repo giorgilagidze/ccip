@@ -79,6 +79,10 @@ contract CrossChainRoundTripTest is Test, ICrossChainControllerEvents {
     uint64 internal constant ORIGIN_SELECTOR = 5009297550715157269;
     uint64 internal constant DESTINATION_SELECTOR = 15971525489660198786;
 
+    /// @dev The failure-path gas reserve both controllers are initialized
+    ///      with. See `CrossChainController.initialize`.
+    uint256 internal constant MIN_FAILED_MESSAGE_GAS = 45_000;
+
     uint256 internal constant GAS_LIMIT = 500_000;
     uint256 internal constant FEE = 0.01 ether;
 
@@ -604,7 +608,10 @@ contract CrossChainRoundTripTest is Test, ICrossChainControllerEvents {
         return CrossChainController(
             payable(ProxyLib.deployUUPSProxy(
                     controllerImplementation,
-                    abi.encodeCall(CrossChainController.initialize, (IDAO(address(_dao)), address(_executor)))
+                    abi.encodeCall(
+                        CrossChainController.initialize,
+                        (IDAO(address(_dao)), address(_executor), MIN_FAILED_MESSAGE_GAS)
+                    )
                 ))
         );
     }

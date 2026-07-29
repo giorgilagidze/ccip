@@ -11,10 +11,7 @@ import { BaseAdapter } from "@src/adapters/BaseAdapter.sol";
 ///         selectors, so the guard can only trip via a subclass like this one.
 /// @dev DO NOT USE IN PRODUCTION!
 contract OversizedSelectorCCIPAdapter is CCIPAdapter {
-    constructor(
-        address _controller,
-        address _router
-    )
+    constructor(address _controller, address _router)
         CCIPAdapter(_controller, _router, address(0), new BaseAdapter.TrustedRemoteConfig[](0))
     { }
 

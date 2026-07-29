@@ -12,7 +12,10 @@ import { FlakyTarget } from "@mocks/FlakyTarget.sol";
 contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
     /// @dev Foundry's genesis timestamp is 1, which leaves no room below
     ///      `block.timestamp` for a valid cutoff; every test warps here first.
-    uint256 internal constant T0 = 1_000_000;
+    /// @dev Declared as `uint120` -- the width `updateRetryCutoff` and
+    ///      `TransactionRecord.bridgedAt` both use -- so cutoff arithmetic needs
+    ///      no truncating casts.
+    uint120 internal constant T0 = 1_000_000;
 
     function setUp() public override {
         super.setUp();
@@ -30,21 +33,19 @@ contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
             )
         );
         vm.prank(bob);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
     }
 
     function test_revertsIfOriginChainIdIsZero() public {
         vm.expectRevert(Errors.INVALID_CHAIN_ID.selector);
         vm.prank(alice);
-        controller.updateRetryCutoff(0, uint120(T0));
+        controller.updateRetryCutoff(0, T0);
     }
 
     /// @dev `0` can never clear a cutoff: the new value must be STRICTLY above
     ///      the current one, and the current one starts at `0`.
     function test_revertsIfCutoffIsZero() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, uint120(0), uint120(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, uint120(0), uint120(0)));
         vm.prank(alice);
         controller.updateRetryCutoff(CHAIN_ID, 0);
     }
@@ -52,11 +53,9 @@ contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
     /// @dev A future cutoff would pre-block messages that have not even been
     ///      delivered yet, so anything above `block.timestamp` is rejected.
     function test_revertsIfCutoffIsInTheFuture() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, uint120(0), uint120(T0 + 1))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, uint120(0), (T0 + 1)));
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0 + 1));
+        controller.updateRetryCutoff(CHAIN_ID, (T0 + 1));
     }
 
     /// @dev The cutoff is monotonic: once raised it can never be lowered or
@@ -64,21 +63,17 @@ contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
     ///      backlog an earlier one blocked.
     function test_revertsIfCutoffNotAboveCurrent() public {
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
 
         vm.warp(T0 + 100);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, uint120(T0), uint120(T0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, T0, T0));
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, uint120(T0), uint120(T0 - 1))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.RETRY_CUTOFF_INVALID.selector, CHAIN_ID, T0, (T0 - 1)));
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0 - 1));
+        controller.updateRetryCutoff(CHAIN_ID, (T0 - 1));
     }
 
     // -------------------------------------------------------------------------
@@ -87,34 +82,34 @@ contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
 
     function test_setsCutoffAndEmitsEvent() public {
         vm.expectEmit(true, true, true, true, address(controller));
-        emit RetryCutoffUpdated(CHAIN_ID, 0, uint120(T0));
+        emit RetryCutoffUpdated(CHAIN_ID, 0, T0);
 
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
 
-        assertEq(controller.retryCutoff(CHAIN_ID), uint120(T0));
+        assertEq(controller.retryCutoff(CHAIN_ID), T0);
     }
 
     function test_raisingCutoffEmitsTheReplacedValue() public {
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
 
         vm.warp(T0 + 100);
 
         vm.expectEmit(true, true, true, true, address(controller));
-        emit RetryCutoffUpdated(CHAIN_ID, uint120(T0), uint120(T0 + 100));
+        emit RetryCutoffUpdated(CHAIN_ID, T0, (T0 + 100));
 
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0 + 100));
+        controller.updateRetryCutoff(CHAIN_ID, (T0 + 100));
 
-        assertEq(controller.retryCutoff(CHAIN_ID), uint120(T0 + 100));
+        assertEq(controller.retryCutoff(CHAIN_ID), (T0 + 100));
     }
 
     function test_cutoffIsPerOriginChain() public {
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
 
-        assertEq(controller.retryCutoff(CHAIN_ID), uint120(T0));
+        assertEq(controller.retryCutoff(CHAIN_ID), T0);
         assertEq(controller.retryCutoff(OTHER_CHAIN_ID), 0, "another chain's cutoff must be untouched");
     }
 
@@ -129,13 +124,11 @@ contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
         (FlakyTarget flaky, bytes memory encodedTx, bytes32 txId) = _deliverFailingMessage(1);
 
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0)); // == bridgedAt
+        controller.updateRetryCutoff(CHAIN_ID, T0); // == bridgedAt
 
         flaky.setShouldRevert(false);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.MESSAGE_PREDATES_RETRY_CUTOFF.selector, txId, uint120(T0), uint120(T0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.MESSAGE_PREDATES_RETRY_CUTOFF.selector, txId, T0, T0));
         vm.prank(alice);
         controller.retryMessage(encodedTx);
 
@@ -148,7 +141,7 @@ contract CrossChainControllerUpdateRetryCutoffTest is CrossChainControllerBase {
 
     function test_allowsRetryOfMessageDeliveredAfterCutoff() public {
         vm.prank(alice);
-        controller.updateRetryCutoff(CHAIN_ID, uint120(T0));
+        controller.updateRetryCutoff(CHAIN_ID, T0);
 
         vm.warp(T0 + 1); // bridgedAt will be strictly above the cutoff
         (FlakyTarget flaky, bytes memory encodedTx, bytes32 txId) = _deliverFailingMessage(1);

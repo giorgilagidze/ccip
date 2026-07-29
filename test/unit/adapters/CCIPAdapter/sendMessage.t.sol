@@ -319,13 +319,13 @@ contract CCIPAdapterSendMessageTest is CCIPAdapterBase {
     // -------------------------------------------------------------------------
 
     /// @dev Snapshots the controller's storage byte-for-byte around a successful
-    ///      `forwardMessage`, using the REAL `CCIPAdapter`. Layout (per
-    ///      `forge inspect .../CrossChainController.sol storageLayout`):
-    ///      slot 0 = `Pausable._paused`, slot 1 = `_currentTxNonce`, slot 2 =
-    ///      `_transactions`, slot 3 = `chainToAdapter`. The nonce slot
-    ///      legitimately increments on send (checked separately); everything
-    ///      else must be untouched, as must the adapter's own (separate-address)
-    ///      storage.
+    ///      `forwardMessage`, using the REAL `CCIPAdapter`. The slot constants
+    ///      live in `Base.t.sol` and are pinned to the real layout by
+    ///      `test_storageSlotConstantsMatchLayout` -- a stale one would make
+    ///      the assertions below read an untouched word and pass vacuously.
+    ///      The nonce slot legitimately increments on send (asserted
+    ///      separately); everything else must be untouched, as must the
+    ///      adapter's own (separate-address) storage.
     function test_doesNotCollideWithControllerStorage() public {
         _registerLane(CHAIN_ETH_MAINNET, address(adapter), remoteAdapter);
 

@@ -154,12 +154,35 @@ A `PluginRepo` does not hold the plugin code itself. It holds a `PluginSetup` pe
 
 Steps to install: Let's assume L1 is mainnet and L2 is base.
 
+Both controllers must exist before either adapter can be deployed: an adapter takes
+its trusted remote in the constructor and has no setter, and that trusted remote is
+the *other* chain's controller.
+
 1. Install `CrossChainController` on L1. (CCC_L1)
 2. Install `CrossChainController` on L2. (CCC_L2)
-3. on L1, deploy `CCIPAdapter` and pass (CCC_L2).
-4. on L2, deploy `CCIPAdapter` and pass (CCC_L1)
-5. on L1, updateConfig on `CrossChainController` and pass `CCIPAdapter` address of L1.
-6. on L2, updateConfig on `CrossChainController` and pass `CCIPAdapter` address of L2.
+3. On L1, deploy `CCIPAdapter` (ADAPTER_L1) with:
+   - `_crosschainController` = **CCC_L1** - the LOCAL controller. The send path is
+     `delegatecall`ed from it, and `onlyDelegatecallFromController` compares
+     `address(this)` against this value, so a remote address here makes every send
+     revert with `SEND_PATH_NOT_DELEGATECALLED`.
+   - `_ccipRouter` = the CCIP Router on L1.
+   - `_feeToken` = the fee token, or `address(0)` for native.
+   - `_trustedRemoteConfigs` = `[{ standardChainId: <L2 chain id>, trustedRemote: CCC_L2 }]`
+     - the remote **controller**, never the remote adapter: the send path is a
+     `delegatecall`, so the bridge attributes inbound messages to the controller.
+4. On L2, deploy `CCIPAdapter` (ADAPTER_L2) with the mirror image:
+   `_crosschainController` = **CCC_L2**, `_ccipRouter` = the CCIP Router on L2,
+   `_feeToken` as above, and
+   `_trustedRemoteConfigs` = `[{ standardChainId: <L1 chain id>, trustedRemote: CCC_L1 }]`.
+5. On L1, call `updateConfig` on CCC_L1 with `_chainIds = [<L2 chain id>]` and
+   `_configs = [{ localAdapter: ADAPTER_L1, remoteAdapter: ADAPTER_L2 }]`.
+6. On L2, call `updateConfig` on CCC_L2 with `_chainIds = [<L1 chain id>]` and
+   `_configs = [{ localAdapter: ADAPTER_L2, remoteAdapter: ADAPTER_L1 }]`.
+
+Note the asymmetry in what each side stores: `updateConfig` records the remote
+**adapter** (the bridge-level receiver), while the adapter constructor records the
+remote **controller** (the authenticated sender). Swapping them is the most common
+wiring mistake - inbound messages are then rejected with `REMOTE_NOT_TRUSTED`.
 
 ### Decommissioning a chain (runbook)
 

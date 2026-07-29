@@ -89,12 +89,27 @@ contract CrossChainControllerSetupTest is Test {
 
     function test_installationParametersRoundTrip() public {
         address executor = makeAddr("executor");
+        uint256 minFailedMessageGas = 12_345;
 
-        (address decodedExecutor, address decodedGuardian) =
-            setup.decodeInstallationParameters(setup.encodeInstallationParameters(executor, guardian));
+        (address decodedExecutor, address decodedGuardian, uint256 decodedMinFailedMessageGas) = setup.decodeInstallationParameters(
+            setup.encodeInstallationParameters(executor, guardian, minFailedMessageGas)
+        );
 
         assertEq(decodedExecutor, executor);
         assertEq(decodedGuardian, guardian);
+        assertEq(decodedMinFailedMessageGas, minFailedMessageGas);
+    }
+
+    /// @dev The reserve is an installation parameter, so it must reach the
+    ///      deployed plugin rather than being defaulted somewhere in between.
+    function test_installationPassesMinFailedMessageGasToThePlugin() public {
+        uint256 minFailedMessageGas = 61_234;
+
+        (address plugin,) = setup.prepareInstallation(
+            address(daoMock), setup.encodeInstallationParameters(address(0), address(0), minFailedMessageGas)
+        );
+
+        assertEq(CrossChainController(payable(plugin)).minFailedMessageGas(), minFailedMessageGas);
     }
 
     // -------------------------------------------------------------------------
@@ -105,7 +120,7 @@ contract CrossChainControllerSetupTest is Test {
         Executor providedExecutor = new Executor();
 
         (address plugin, IPluginSetup.PreparedSetupData memory data) = setup.prepareInstallation(
-            address(daoMock), setup.encodeInstallationParameters(address(providedExecutor), address(0))
+            address(daoMock), setup.encodeInstallationParameters(address(providedExecutor), address(0), 45_000)
         );
 
         assertTrue(plugin.code.length > 0);
@@ -123,8 +138,9 @@ contract CrossChainControllerSetupTest is Test {
     }
 
     function test_deploysOwnerGatedExecutorWhenNoneProvided() public {
-        (address plugin, IPluginSetup.PreparedSetupData memory data) =
-            setup.prepareInstallation(address(daoMock), setup.encodeInstallationParameters(address(0), address(0)));
+        (address plugin, IPluginSetup.PreparedSetupData memory data) = setup.prepareInstallation(
+            address(daoMock), setup.encodeInstallationParameters(address(0), address(0), 45_000)
+        );
 
         address deployedExecutor = data.helpers[0];
         assertTrue(deployedExecutor != address(0));
@@ -141,7 +157,7 @@ contract CrossChainControllerSetupTest is Test {
         Executor providedExecutor = new Executor();
 
         (address plugin, IPluginSetup.PreparedSetupData memory data) = setup.prepareInstallation(
-            address(daoMock), setup.encodeInstallationParameters(address(providedExecutor), guardian)
+            address(daoMock), setup.encodeInstallationParameters(address(providedExecutor), guardian, 45_000)
         );
 
         assertEq(data.permissions.length, 9);
@@ -165,8 +181,9 @@ contract CrossChainControllerSetupTest is Test {
     /// @dev When the DAO itself is the executor, the plugin needs EXECUTE on
     ///      the DAO -- the one entry whose `where`/`who` are inverted.
     function test_daoAsExecutorGrantsPluginExecuteOnTheDao() public {
-        (address plugin, IPluginSetup.PreparedSetupData memory data) =
-            setup.prepareInstallation(address(daoMock), setup.encodeInstallationParameters(address(daoMock), address(0)));
+        (address plugin, IPluginSetup.PreparedSetupData memory data) = setup.prepareInstallation(
+            address(daoMock), setup.encodeInstallationParameters(address(daoMock), address(0), 45_000)
+        );
 
         assertEq(CrossChainController(payable(plugin)).executor(), address(daoMock));
 
@@ -183,8 +200,9 @@ contract CrossChainControllerSetupTest is Test {
     }
 
     function test_guardianAndDaoExecutorYieldTenPermissions() public {
-        (address plugin, IPluginSetup.PreparedSetupData memory data) =
-            setup.prepareInstallation(address(daoMock), setup.encodeInstallationParameters(address(daoMock), guardian));
+        (address plugin, IPluginSetup.PreparedSetupData memory data) = setup.prepareInstallation(
+            address(daoMock), setup.encodeInstallationParameters(address(daoMock), guardian, 45_000)
+        );
 
         assertEq(data.permissions.length, 10);
         _assertBasePermissions(data.permissions, PermissionLib.Operation.Grant, plugin);
