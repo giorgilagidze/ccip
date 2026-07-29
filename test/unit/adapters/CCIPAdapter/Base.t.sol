@@ -16,7 +16,7 @@ import { IDAO } from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 import { ProxyLib } from "@aragon/osx-commons-contracts/src/utils/deployment/ProxyLib.sol";
 import { DAOMock } from "@osx-test/mocks/commons/dao/DAOMock.sol";
 import { ERC20Mock } from "@mocks/ERC20Mock.sol";
-import { CCIPRouterMock } from "@mocks/CCIPRouterMock.sol";
+import { CCIPRouterMock } from "@mocks/ccip/CCIPRouterMock.sol";
 import { DelegateCallerMock } from "@mocks/DelegateCallerMock.sol";
 
 /// @title CCIPAdapterBase
@@ -50,9 +50,7 @@ abstract contract CCIPAdapterBase is Test, ICrossChainControllerEvents {
 
     /// @dev Default adapter from `setUp`: native (`address(0)`) fee token.
     CCIPAdapter internal adapter;
-    /// @dev A second adapter sharing `router`, but with `FEE_TOKEN = feeTokenErc20`.
-    ///      `FEE_TOKEN` is immutable, so an ERC20-fee lane needs its own adapter
-    ///      instance -- there is no setter to flip `adapter` itself over.
+    /// @dev A second adapter but with `FEE_TOKEN = feeTokenErc20`.
     CCIPAdapter internal erc20Adapter;
 
     /// @dev Drives the guard-isolation tests that the real controller cannot

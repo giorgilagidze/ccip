@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.8;
 
+import { console } from "forge-std/console.sol";
+
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -267,14 +269,36 @@ contract CrossChainController is ICrossChainController, PluginUUPSUpgradeable, P
         // or not its actions executed. Shares a slot with `state`.
         record.bridgedAt = SafeCast.toUint120(block.timestamp);
 
+        // Reserve gas for the `catch` block before running the payload.
+        //
+        // Without this, the EVM hands the payload 63/64 of whatever is left and
+        // keeps only 1/64. Say 101,000 gas is left and the payload needs
+        // 100,000: it gets 99,421, runs out, and the `catch` is left with 1,579
+        // -- too little to store the state and emit. So the whole call reverts
+        // and nothing is written down.
+        //
+        // That is the wrong outcome. The message did arrive and its actions
+        // were attempted; only the actions failed. It should be recorded as
+        // `Delivered` so it can be retried or cancelled here. Holding gas back
+        // guarantees the `catch` can always do that.
+        uint256 gasLimit = gasleft();
+        unchecked {
+            if (gasLimit < 45000) revert("ss");
+            gasLimit -= 45000;
+        }
+
         // The self-call also contains payload decoding, so a malformed payload
         // is captured for retry rather than reverting the bridge delivery.
+        console.log("[GASPROBE] before try", gasleft());
         try this.executeActions(txId, transaction.message) {
             emit MessageReceived(_originChainId, _messageId, txId, _encodedTx);
         } catch (bytes memory reason) {
+            console.log("[GASPROBE] catch entered", gasleft());
             record.state = TransactionState.Delivered;
+            console.log("[GASPROBE] after sstore", gasleft());
 
             emit MessageExecutionFailed(_originChainId, _messageId, txId, _encodedTx, reason);
+            console.log("[GASPROBE] after event", gasleft());
         }
     }
 
