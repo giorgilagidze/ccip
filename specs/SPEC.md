@@ -92,9 +92,10 @@ flowchart TB
 
 #### `CrossChainController`
 
-The message paths (`forwardMessage`, `receiveMessage`, `retryMessage`, `cancelMessage`)
-are all `whenNotPaused`. The admin paths deliberately are not, so an incident can be
-recovered from while the system is paused.
+The message paths that move messages forward (`forwardMessage`, `receiveMessage`,
+`retryMessage`) are all `whenNotPaused`. `cancelMessage` and the admin paths
+deliberately are not, so an incident can be recovered from while the system is paused
+(see the `pause()` row for why cancelling stays available).
 
 | Function | Access | What it does |
 |---|---|---|
